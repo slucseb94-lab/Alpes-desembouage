@@ -46,3 +46,32 @@ form.addEventListener('submit', async (e) => {
     note.style.color = '#d9541e';
   }
 });
+
+const cookieBanner = document.getElementById('cookie-banner');
+const cookieAccept = document.getElementById('cookie-accept');
+const cookieDecline = document.getElementById('cookie-decline');
+const consentChoice = localStorage.getItem('cookie-consent');
+
+function applyConsent(granted) {
+  if (typeof gtag === 'function') {
+    gtag('consent', 'update', { analytics_storage: granted ? 'granted' : 'denied' });
+  }
+}
+
+if (consentChoice) {
+  applyConsent(consentChoice === 'granted');
+} else {
+  cookieBanner.hidden = false;
+}
+
+cookieAccept.addEventListener('click', () => {
+  localStorage.setItem('cookie-consent', 'granted');
+  applyConsent(true);
+  cookieBanner.hidden = true;
+});
+
+cookieDecline.addEventListener('click', () => {
+  localStorage.setItem('cookie-consent', 'denied');
+  applyConsent(false);
+  cookieBanner.hidden = true;
+});
