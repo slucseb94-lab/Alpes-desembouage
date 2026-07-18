@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alpes Désembouage — Entretien de circuits de chauffage en Rhône-Alpes</title>
+  <meta name="description" content="Désembouage de circuits de chauffage pour particuliers, professionnels et collectivités en région Rhône-Alpes. 10 ans d'expertise, jusqu'à 25% d'économie d'énergie.">
+  <link rel="icon" type="image/png" href="images/favicon-placeholder.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="site-header" id="header">
+    <div class="container header-inner">
+      <a href="#accueil" class="logo">
+        <img src="images/favicon-placeholder.png" alt="Alpes Désembouage">
+        <span>Alpes <strong>Désembouage</strong></span>
+      </a>
+      <nav class="nav" id="nav">
+        <a href="#accueil">Accueil</a>
+        <a href="#boues">Les boues</a>
+        <a href="#desembouage">Le désembouage</a>
+        <a href="#societe">La société</a>
+        <a href="#contact" class="nav-cta">Contact</a>
+      </nav>
+      <button class="burger" id="burger" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- HERO -->
+    <section class="hero" id="accueil">
+      <svg class="hero-bg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="skyGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#0b2545"/>
+            <stop offset="100%" stop-color="#13315c"/>
+          </linearGradient>
+          <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ef6c33" stop-opacity="0.55"/>
+            <stop offset="100%" stop-color="#ef6c33" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="mtBack" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#2c5686"/>
+            <stop offset="100%" stop-color="#1d4e89"/>
+          </linearGradient>
+          <linearGradient id="mtFront" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#173a63"/>
+            <stop offset="100%" stop-color="#0e2748"/>
+          </linearGradient>
+        </defs>
+
+        <rect width="1600" height="900" fill="url(#skyGrad)"/>
+        <circle cx="1180" cy="260" r="320" fill="url(#sunGlow)"/>
+
+        <!-- back mountain range -->
+        <path d="M0,560 L160,400 L300,520 L430,340 L600,540 L760,380 L900,560 L1080,360 L1240,540 L1400,410 L1600,560 L1600,900 L0,900 Z" fill="url(#mtBack)" opacity="0.55"/>
+        <path d="M120,400 L160,340 L200,400 Z" fill="#eaf2fb" opacity="0.8"/>
+        <path d="M980,360 L1030,300 L1080,360 Z" fill="#eaf2fb" opacity="0.8"/>
+        <path d="M1360,410 L1400,360 L1440,410 Z" fill="#eaf2fb" opacity="0.8"/>
+
+        <!-- front mountain range -->
+        <path d="M0,650 L220,480 L380,620 L560,440 L760,640 L960,470 L1160,630 L1360,480 L1600,640 L1600,900 L0,900 Z" fill="url(#mtFront)"/>
+        <path d="M180,500 L220,450 L270,500 Z" fill="#f4f8fd" opacity="0.9"/>
+        <path d="M720,480 L760,430 L810,480 Z" fill="#f4f8fd" opacity="0.9"/>
+        <path d="M1320,500 L1360,450 L1410,500 Z" fill="#f4f8fd" opacity="0.9"/>
+
+        <!-- pipe / circuit motif -->
+        <path class="hero-pipe" d="M-50,760 C 250,700 350,820 650,750 S 1050,680 1350,740 S 1650,700 1700,760" fill="none" stroke="#ef6c33" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 22"/>
+        <path d="M-50,760 C 250,700 350,820 650,750 S 1050,680 1350,740 S 1650,700 1700,760" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.35"/>
+        <circle cx="650" cy="750" r="9" fill="#ef6c33"/>
+        <circle cx="1350" cy="740" r="9" fill="#ef6c33"/>
+
+        <!-- heat waves -->
+        <g stroke="#ffd7bd" stroke-opacity="0.55" stroke-width="4" fill="none" stroke-linecap="round">
+          <path d="M600,830 C 615,800 585,780 600,750"/>
+          <path d="M650,840 C 665,810 635,790 650,760"/>
+          <path d="M700,830 C 715,800 685,780 700,750"/>
+        </g>
+      </svg>
+      <div class="hero-overlay"></div>
+      <div class="container hero-content">
+        <p class="eyebrow">Spécialiste du désembouage · Région Rhône-Alpes</p>
+        <h1>Redonnez de la puissance<br>à votre chauffage</h1>
+        <p class="hero-sub">10 ans d'expertise au service de la performance et de la longévité de vos installations. Jusqu'à 25% d'économie d'énergie après un désembouage.</p>
+        <div class="hero-actions">
+          <a href="#contact" class="btn btn-primary">Demander un devis</a>
+          <a href="#desembouage" class="btn btn-ghost">Comprendre le désembouage</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRUST BAR -->
+    <div class="trust-bar">
+      <div class="container trust-bar-inner">
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+          <span>10 ans d'expertise</span>
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+          <span>Devis gratuit sous 24h</span>
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          <span>Toute la région Rhône-Alpes</span>
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+          <span>Satisfaction garantie</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LES BOUES -->
+    <section class="section" id="boues">
+      <div class="container">
+        <span class="tag">D'où viennent les boues ?</span>
+        <h2>Comprendre l'origine des dépôts</h2>
+        <div class="grid-2">
+          <div class="text-block">
+            <p>Les boues dans un circuit de chauffage sont des dépôts de particules solides qui s'accumulent au fil du temps et perturbent le bon fonctionnement du système.</p>
+            <p>Elles sont principalement constituées de résidus de corrosion, de tartre et d'impuretés présentes dans l'eau du circuit.</p>
+            <p>Avec le temps, en présence d'oxygène et d'eau, ces matériaux s'oxydent et forment des particules de rouille qui se déposent au fond des radiateurs et des canalisations.</p>
+            <p>Les planchers chauffants peuvent être exposés à la prolifération d'algues et de bactéries en raison de la faible température de fonctionnement.</p>
+          </div>
+          <div class="cause-cards">
+            <div class="cause-card">
+              <div class="cause-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </div>
+              <h3>Corrosion</h3>
+              <p>Oxydation des métaux du circuit au contact de l'eau et de l'oxygène.</p>
+            </div>
+            <div class="cause-card">
+              <div class="cause-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s7 8.5 7 13a7 7 0 0 1-14 0c0-4.5 7-13 7-13z"/></svg>
+              </div>
+              <h3>Tartre</h3>
+              <p>Dépôts calcaires liés à la dureté de l'eau qui circule dans l'installation.</p>
+            </div>
+            <div class="cause-card">
+              <div class="cause-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="8" r="2"/><circle cx="15" cy="16" r="3.5"/><circle cx="7" cy="17" r="1.8"/></svg>
+              </div>
+              <h3>Algues &amp; bactéries</h3>
+              <p>Prolifération favorisée par la faible température des planchers chauffants.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LE DESEMBOUAGE -->
+    <section class="section section-alt" id="desembouage">
+      <div class="container">
+        <span class="tag">Le désembouage</span>
+        <h2>Un entretien essentiel pour votre circuit</h2>
+        <p class="lead">Le désembouage est une opération d'entretien visant à nettoyer et purifier les circuits de chauffage central en éliminant les boues et impuretés qui s'y accumulent avec le temps.</p>
+
+        <div class="grid-2 align-center">
+          <div class="text-block">
+            <h3>Une centrale de désembouage</h3>
+            <p>Un appareil spécialement conçu pour nettoyer et purifier les circuits de chauffage central. Il est raccordé directement au circuit via les connexions de la chaudière ou des radiateurs. Son rôle est de :</p>
+            <ul class="check-list">
+              <li>Injecter de l'eau sous pression ou avec un débit pulsé pour décoller et évacuer les boues</li>
+              <li>Rincer intégralement le circuit pour éliminer toute trace d'impuretés avant de remettre l'installation en eau</li>
+            </ul>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">25%</div>
+            <p class="stat-label">d'économie d'énergie possible grâce à un désembouage régulier, en restaurant la performance du système et la circulation de la chaleur.</p>
+          </div>
+        </div>
+
+        <div class="when-block">
+          <h3>Quand faut-il réaliser un désembouage ?</h3>
+          <ul class="check-list three-col">
+            <li>Tous les 5 à 10 ans, selon l'état du circuit</li>
+            <li>Si certains radiateurs chauffent mal ou sont partiellement froids</li>
+            <li>Si votre chaudière fait du bruit ou consomme plus que d'habitude</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROCESS -->
+    <section class="section" id="process">
+      <div class="container">
+        <span class="tag">Notre méthode</span>
+        <h2>Comment se déroule une intervention ?</h2>
+        <div class="process-steps">
+          <div class="process-step">
+            <div class="process-number">1</div>
+            <div class="process-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            </div>
+            <h3>Diagnostic gratuit</h3>
+            <p>On évalue l'état de votre circuit et vous conseille sur l'intervention réellement nécessaire.</p>
+          </div>
+          <div class="process-step">
+            <div class="process-number">2</div>
+            <div class="process-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+            </div>
+            <h3>Désembouage hydrodynamique</h3>
+            <p>Nettoyage complet du circuit avec notre centrale professionnelle, sans perturber votre installation.</p>
+          </div>
+          <div class="process-step">
+            <div class="process-number">3</div>
+            <div class="process-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+            </div>
+            <h3>Contrôle &amp; remise en eau</h3>
+            <p>Vérification du bon fonctionnement de l'installation avant de vous la restituer prête à l'emploi.</p>
+          </div>
+          <div class="process-step">
+            <div class="process-number">4</div>
+            <div class="process-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+            </div>
+            <h3>Conseils de suivi</h3>
+            <p>Recommandations d'entretien pour prolonger la durée de vie de votre installation.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LA SOCIETE -->
+    <section class="section section-alt" id="societe">
+      <div class="container grid-2 align-center">
+        <div>
+          <span class="tag">La société</span>
+          <h2>Votre expert en entretien des réseaux de chauffage</h2>
+          <p>Alpes Désembouage, c'est 10 ans d'expertise au service de la performance et de la longévité de vos installations de chauffage. Nous intervenons auprès des particuliers, des professionnels et des collectivités pour garantir un système propre, efficace et durable.</p>
+
+          <div class="reason">
+            <div class="reason-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></div>
+            <div>
+              <h4>Un savoir-faire éprouvé</h4>
+              <p>Forts de notre expérience en tant que plombiers chauffagistes, nous maîtrisons les solutions adaptées à chaque type d'installation (radiateurs, planchers chauffants, circuits en acier, cuivre ou PER).</p>
+            </div>
+          </div>
+          <div class="reason">
+            <div class="reason-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></div>
+            <div>
+              <h4>Une intervention efficace</h4>
+              <p>Grâce au désembouage hydrodynamique, nous éliminons les boues et impuretés sans perturber votre installation.</p>
+            </div>
+          </div>
+          <div class="reason">
+            <div class="reason-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></div>
+            <div>
+              <h4>Un chauffage plus performant et économique</h4>
+              <p>Un réseau propre, c'est moins de pannes, une meilleure diffusion de la chaleur et des économies sur votre facture énergétique.</p>
+            </div>
+          </div>
+
+          <p class="zone">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
+            Basés en région alpine, nous intervenons dans toute la région Rhône-Alpes.
+          </p>
+        </div>
+        <div class="societe-media">
+          <svg viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+              <linearGradient id="cardGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#0b2545"/>
+                <stop offset="100%" stop-color="#1d4e89"/>
+              </linearGradient>
+            </defs>
+            <rect width="480" height="480" rx="24" fill="url(#cardGrad)"/>
+            <!-- radiator -->
+            <rect x="120" y="230" width="240" height="110" rx="10" fill="#f7f8fa"/>
+            <g stroke="#0b2545" stroke-width="6" stroke-linecap="round">
+              <line x1="150" y1="230" x2="150" y2="340"/>
+              <line x1="190" y1="230" x2="190" y2="340"/>
+              <line x1="230" y1="230" x2="230" y2="340"/>
+              <line x1="270" y1="230" x2="270" y2="340"/>
+              <line x1="310" y1="230" x2="310" y2="340"/>
+              <line x1="350" y1="230" x2="350" y2="340"/>
+            </g>
+            <rect x="100" y="340" width="30" height="14" rx="4" fill="#d7dde5"/>
+            <rect x="350" y="340" width="30" height="14" rx="4" fill="#d7dde5"/>
+            <!-- heat waves -->
+            <g stroke="#ef6c33" stroke-width="6" fill="none" stroke-linecap="round">
+              <path d="M180,210 C 195,180 165,160 180,130"/>
+              <path d="M240,210 C 255,180 225,160 240,130"/>
+              <path d="M300,210 C 315,180 285,160 300,130"/>
+            </g>
+            <!-- gauge badge -->
+            <circle cx="360" cy="150" r="46" fill="#ef6c33"/>
+            <path d="M340,150 l14,14 26,-30" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA BANNER -->
+    <section class="cta-banner">
+      <div class="container cta-banner-inner">
+        <div>
+          <h2>Un doute sur l'état de votre circuit ?</h2>
+          <p>Diagnostic et devis gratuits, sans engagement. On vous répond sous 24h.</p>
+        </div>
+        <a href="#contact" class="btn btn-primary">Demander mon devis gratuit</a>
+      </div>
+    </section>
+
+    <!-- CONTACT -->
+    <section class="section section-alt" id="contact">
+      <div class="container grid-2">
+        <div>
+          <span class="tag">Contact</span>
+          <h2>Un projet de désembouage ?</h2>
+          <p class="lead">Quand avez-vous effectué votre dernier désembouage ? Contactez-nous pour un diagnostic ou un devis.</p>
+
+          <ul class="contact-list">
+            <li><strong>Fixe</strong> <a href="tel:0972984501">09 72 98 45 01</a></li>
+            <li><strong>Portable</strong> <a href="tel:0658658056">06 58 65 80 56</a></li>
+            <li><strong>Email</strong> <a href="mailto:alpesdesembouage@gmail.com">alpesdesembouage@gmail.com</a></li>
+            <li><strong>Horaires</strong> Lundi au Vendredi, de 9h00 à 18h00</li>
+            <li><strong>Zone</strong> Montailleur, France — Intervention dans toute la région Rhône-Alpes</li>
+          </ul>
+        </div>
+
+        <form class="contact-form" id="contact-form" action="https://formspree.io/f/mgogkyel" method="POST">
+          <label>
+            Nom complet*
+            <input type="text" name="name" required>
+          </label>
+          <label>
+            Email*
+            <input type="email" name="email" required>
+          </label>
+          <label>
+            Numéro de téléphone*
+            <input type="tel" name="phone" required>
+          </label>
+          <label>
+            Message
+            <textarea name="message" rows="4"></textarea>
+          </label>
+          <button type="submit" class="btn btn-primary btn-full">Envoyer</button>
+          <p class="form-note" id="form-note"></p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <span>© <span id="year"></span> Alpes Désembouage — Tous droits réservés</span>
+      <span>Montailleur, France · Rhône-Alpes</span>
+    </div>
+  </footer>
+
+  <script src="js/script.js"></script>
+</body>
+</html>
