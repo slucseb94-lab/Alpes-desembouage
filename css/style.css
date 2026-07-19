@@ -394,13 +394,15 @@ p { color: var(--gray-600); margin-bottom: 14px; }
 }
 .zone svg { width: 20px; height: 20px; color: var(--orange-500); flex-shrink: 0; }
 
-.societe-media img {
+.societe-media img,
+.societe-media video {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   width: 100%;
   aspect-ratio: 1 / 1;
   max-height: 380px;
   object-fit: cover;
+  background: var(--gray-900);
 }
 
 /* CTA banner */
