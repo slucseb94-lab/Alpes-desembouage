@@ -1,6 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <circle cx="50" cy="50" r="50" fill="#f0752c"/>
-  <path d="M50,0 A50,50 0 0,1 50,100 A25,25 0 0,1 50,50 A25,25 0 0,0 50,0 Z" fill="#1c74c4"/>
-  <circle cx="50" cy="25" r="8" fill="#f0752c"/>
-  <circle cx="50" cy="75" r="8" fill="#1c74c4"/>
+  <defs>
+    <linearGradient id="dropGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c74c4"/>
+      <stop offset="100%" stop-color="#f0752c"/>
+    </linearGradient>
+  </defs>
+  <path d="M50,8 C32,32 16,48 16,66 A34,34 0 0,0 84,66 C84,48 68,32 50,8 Z" fill="url(#dropGrad)"/>
+  <path d="M30,58 a18,18 0 0 0 18,18" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
 </svg>
