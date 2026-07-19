@@ -112,7 +112,7 @@ p { color: var(--gray-600); margin-bottom: 14px; }
   font-size: 1.05rem;
   color: var(--blue-900);
 }
-.logo img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+.logo img { width: 30px; height: 39px; object-fit: contain; }
 .logo strong { color: var(--orange-500); }
 
 .nav { display: flex; align-items: center; gap: 30px; }
