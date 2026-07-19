@@ -99,26 +99,26 @@
       <svg class="hero-bg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
           <linearGradient id="skyGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#2a2015"/>
-            <stop offset="42%" stop-color="#0d3d73"/>
+            <stop offset="0%" stop-color="#0d3d73"/>
+            <stop offset="46%" stop-color="#0d3d73"/>
             <stop offset="100%" stop-color="#145a9e"/>
           </linearGradient>
           <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="#f0752c" stop-opacity="0.4"/>
+            <stop offset="0%" stop-color="#f0752c" stop-opacity="0.35"/>
             <stop offset="100%" stop-color="#f0752c" stop-opacity="0"/>
           </radialGradient>
         </defs>
 
         <rect width="1600" height="900" fill="url(#skyGrad)"/>
-        <circle cx="1050" cy="430" r="300" fill="url(#sunGlow)"/>
+        <circle cx="1150" cy="450" r="350" fill="url(#sunGlow)"/>
 
-        <!-- pipe base -->
-        <rect x="-50" y="596" width="1700" height="48" fill="#0a1826" opacity="0.35"/>
-        <line x1="-50" y1="596" x2="1650" y2="596" stroke="#ffffff" stroke-opacity="0.12"/>
-        <line x1="-50" y1="644" x2="1650" y2="644" stroke="#ffffff" stroke-opacity="0.12"/>
+        <!-- pipe base (côté droit uniquement) -->
+        <rect x="680" y="576" width="970" height="48" fill="#0a1826" opacity="0.35"/>
+        <line x1="680" y1="576" x2="1650" y2="576" stroke="#ffffff" stroke-opacity="0.12"/>
+        <line x1="680" y1="624" x2="1650" y2="624" stroke="#ffffff" stroke-opacity="0.12"/>
 
         <!-- centrale de désembouage -->
-        <g transform="translate(930,530)">
+        <g transform="translate(990,470)">
           <rect x="0" y="0" width="140" height="200" rx="20" fill="#e6ebf1"/>
           <rect x="30" y="34" width="80" height="46" rx="10" fill="#f0752c"/>
           <circle cx="45" cy="128" r="12" fill="#2fbf6b"/>
@@ -128,37 +128,33 @@
 
         <!-- sortie eau propre -->
         <g stroke="#8fd0ff" stroke-width="4" fill="none" opacity="0.7" stroke-linecap="round">
-          <path d="M1090,590 H1650"/>
-          <path d="M1110,610 H1650"/>
-          <path d="M1090,630 H1650"/>
+          <path d="M1150,590 H1650"/>
+          <path d="M1170,610 H1650"/>
+          <path d="M1150,630 H1650"/>
         </g>
         <circle r="6" fill="#bfe6ff">
-          <animateMotion dur="2.4s" repeatCount="indefinite" path="M1090,590 H1650"/>
+          <animateMotion dur="2.2s" repeatCount="indefinite" path="M1150,590 H1650"/>
         </circle>
         <circle r="5" fill="#8fd0ff">
-          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.9s" path="M1110,610 H1650"/>
+          <animateMotion dur="2.6s" repeatCount="indefinite" begin="0.8s" path="M1170,610 H1650"/>
         </circle>
         <circle r="5" fill="#bfe6ff">
-          <animateMotion dur="2.2s" repeatCount="indefinite" begin="1.6s" path="M1090,630 H1650"/>
+          <animateMotion dur="2s" repeatCount="indefinite" begin="1.4s" path="M1150,630 H1650"/>
         </circle>
 
         <!-- boues aspirées vers la centrale -->
         <g fill="#6b4a2f">
-          <circle r="10">
-            <animateMotion dur="3.2s" repeatCount="indefinite" path="M-50,600 H900"/>
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.2s" repeatCount="indefinite"/>
+          <circle r="9">
+            <animateMotion dur="2.6s" repeatCount="indefinite" path="M700,588 H990"/>
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.8;1" dur="2.6s" repeatCount="indefinite"/>
           </circle>
-          <circle r="14">
-            <animateMotion dur="3.9s" repeatCount="indefinite" begin="1s" path="M-80,625 H900"/>
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.9s" repeatCount="indefinite"/>
+          <circle r="12">
+            <animateMotion dur="3.2s" repeatCount="indefinite" begin="0.9s" path="M690,610 H990"/>
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.8;1" dur="3.2s" repeatCount="indefinite"/>
           </circle>
-          <circle r="8" opacity="0.85">
-            <animateMotion dur="2.7s" repeatCount="indefinite" begin="1.9s" path="M-40,615 H900"/>
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.7s" repeatCount="indefinite"/>
-          </circle>
-          <circle r="11">
-            <animateMotion dur="4.4s" repeatCount="indefinite" begin="0.4s" path="M-100,608 H900"/>
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="4.4s" repeatCount="indefinite"/>
+          <circle r="7" opacity="0.85">
+            <animateMotion dur="2.3s" repeatCount="indefinite" begin="1.6s" path="M710,600 H990"/>
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.8;1" dur="2.3s" repeatCount="indefinite"/>
           </circle>
         </g>
       </svg>
