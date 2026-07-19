@@ -148,6 +148,7 @@ p { color: var(--gray-600); margin-bottom: 14px; }
   min-height: 92vh;
   display: flex;
   align-items: center;
+  padding-bottom: 90px;
   color: var(--white);
   overflow: hidden;
 }
@@ -173,11 +174,11 @@ p { color: var(--gray-600); margin-bottom: 14px; }
 }
 .hero h1 {
   color: var(--white);
-  font-size: clamp(2.2rem, 5vw, 3.4rem);
-  margin-bottom: 20px;
+  font-size: clamp(1.9rem, 4vw, 2.8rem);
+  margin-bottom: 18px;
 }
-.hero-sub { color: rgba(255,255,255,0.88); font-size: 1.1rem; max-width: 560px; margin-bottom: 32px; }
-.hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+.hero-sub { color: rgba(255,255,255,0.88); font-size: 1.05rem; max-width: 560px; margin-bottom: 30px; }
+.hero-actions { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
 
 /* Trust bar */
 .trust-bar {

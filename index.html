@@ -113,12 +113,12 @@
         <circle cx="1050" cy="430" r="300" fill="url(#sunGlow)"/>
 
         <!-- pipe base -->
-        <rect x="-50" y="536" width="1700" height="48" fill="#0a1826" opacity="0.35"/>
-        <line x1="-50" y1="536" x2="1650" y2="536" stroke="#ffffff" stroke-opacity="0.12"/>
-        <line x1="-50" y1="584" x2="1650" y2="584" stroke="#ffffff" stroke-opacity="0.12"/>
+        <rect x="-50" y="596" width="1700" height="48" fill="#0a1826" opacity="0.35"/>
+        <line x1="-50" y1="596" x2="1650" y2="596" stroke="#ffffff" stroke-opacity="0.12"/>
+        <line x1="-50" y1="644" x2="1650" y2="644" stroke="#ffffff" stroke-opacity="0.12"/>
 
         <!-- centrale de désembouage -->
-        <g transform="translate(930,470)">
+        <g transform="translate(930,530)">
           <rect x="0" y="0" width="140" height="200" rx="20" fill="#e6ebf1"/>
           <rect x="30" y="34" width="80" height="46" rx="10" fill="#f0752c"/>
           <circle cx="45" cy="128" r="12" fill="#2fbf6b"/>
@@ -128,36 +128,36 @@
 
         <!-- sortie eau propre -->
         <g stroke="#8fd0ff" stroke-width="4" fill="none" opacity="0.7" stroke-linecap="round">
-          <path d="M1090,530 H1650"/>
-          <path d="M1110,550 H1650"/>
-          <path d="M1090,570 H1650"/>
+          <path d="M1090,590 H1650"/>
+          <path d="M1110,610 H1650"/>
+          <path d="M1090,630 H1650"/>
         </g>
         <circle r="6" fill="#bfe6ff">
-          <animateMotion dur="2.4s" repeatCount="indefinite" path="M1090,530 H1650"/>
+          <animateMotion dur="2.4s" repeatCount="indefinite" path="M1090,590 H1650"/>
         </circle>
         <circle r="5" fill="#8fd0ff">
-          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.9s" path="M1110,550 H1650"/>
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.9s" path="M1110,610 H1650"/>
         </circle>
         <circle r="5" fill="#bfe6ff">
-          <animateMotion dur="2.2s" repeatCount="indefinite" begin="1.6s" path="M1090,570 H1650"/>
+          <animateMotion dur="2.2s" repeatCount="indefinite" begin="1.6s" path="M1090,630 H1650"/>
         </circle>
 
         <!-- boues aspirées vers la centrale -->
         <g fill="#6b4a2f">
           <circle r="10">
-            <animateMotion dur="3.2s" repeatCount="indefinite" path="M-50,540 H900"/>
+            <animateMotion dur="3.2s" repeatCount="indefinite" path="M-50,600 H900"/>
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.2s" repeatCount="indefinite"/>
           </circle>
           <circle r="14">
-            <animateMotion dur="3.9s" repeatCount="indefinite" begin="1s" path="M-80,565 H900"/>
+            <animateMotion dur="3.9s" repeatCount="indefinite" begin="1s" path="M-80,625 H900"/>
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.9s" repeatCount="indefinite"/>
           </circle>
           <circle r="8" opacity="0.85">
-            <animateMotion dur="2.7s" repeatCount="indefinite" begin="1.9s" path="M-40,555 H900"/>
+            <animateMotion dur="2.7s" repeatCount="indefinite" begin="1.9s" path="M-40,615 H900"/>
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.7s" repeatCount="indefinite"/>
           </circle>
           <circle r="11">
-            <animateMotion dur="4.4s" repeatCount="indefinite" begin="0.4s" path="M-100,548 H900"/>
+            <animateMotion dur="4.4s" repeatCount="indefinite" begin="0.4s" path="M-100,608 H900"/>
             <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="4.4s" repeatCount="indefinite"/>
           </circle>
         </g>
