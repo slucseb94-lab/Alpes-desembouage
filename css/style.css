@@ -145,10 +145,10 @@ p { color: var(--gray-600); margin-bottom: 14px; }
 /* Hero */
 .hero {
   position: relative;
-  min-height: 620px;
+  min-height: 460px;
   display: flex;
   align-items: center;
-  padding: 76px 0;
+  padding: 56px 0;
   color: var(--white);
   overflow: hidden;
 }
@@ -580,6 +580,6 @@ p { color: var(--gray-600); margin-bottom: 14px; }
 
 @media (max-width: 560px) {
   .section { padding: 60px 0; }
-  .hero { min-height: 560px; padding: 76px 0 40px; }
+  .hero { min-height: 440px; padding: 56px 0 30px; }
   .process-steps { grid-template-columns: 1fr; }
 }
