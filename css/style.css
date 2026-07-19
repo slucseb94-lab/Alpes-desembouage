@@ -157,15 +157,6 @@ p { color: var(--gray-600); margin-bottom: 14px; }
   width: 100%;
   height: 100%;
 }
-.hero-pipe {
-  animation: pipeFlow 6s linear infinite;
-}
-@keyframes pipeFlow {
-  to { stroke-dashoffset: -240; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero-pipe { animation: none; }
-}
 .hero-overlay {
   position: absolute;
   inset: 0;

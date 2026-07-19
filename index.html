@@ -98,50 +98,68 @@
     <section class="hero" id="accueil">
       <svg class="hero-bg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
-          <linearGradient id="skyGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#0d3d73"/>
+          <linearGradient id="skyGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#2a2015"/>
+            <stop offset="42%" stop-color="#0d3d73"/>
             <stop offset="100%" stop-color="#145a9e"/>
           </linearGradient>
           <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="#f0752c" stop-opacity="0.55"/>
+            <stop offset="0%" stop-color="#f0752c" stop-opacity="0.4"/>
             <stop offset="100%" stop-color="#f0752c" stop-opacity="0"/>
           </radialGradient>
-          <linearGradient id="mtBack" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#2f7ec9"/>
-            <stop offset="100%" stop-color="#1c74c4"/>
-          </linearGradient>
-          <linearGradient id="mtFront" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#123a6b"/>
-            <stop offset="100%" stop-color="#0a2c56"/>
-          </linearGradient>
         </defs>
 
         <rect width="1600" height="900" fill="url(#skyGrad)"/>
-        <circle cx="1180" cy="260" r="320" fill="url(#sunGlow)"/>
+        <circle cx="1050" cy="430" r="300" fill="url(#sunGlow)"/>
 
-        <!-- back mountain range -->
-        <path d="M0,560 L160,400 L300,520 L430,340 L600,540 L760,380 L900,560 L1080,360 L1240,540 L1400,410 L1600,560 L1600,900 L0,900 Z" fill="url(#mtBack)" opacity="0.55"/>
-        <path d="M120,400 L160,340 L200,400 Z" fill="#eaf2fb" opacity="0.8"/>
-        <path d="M980,360 L1030,300 L1080,360 Z" fill="#eaf2fb" opacity="0.8"/>
-        <path d="M1360,410 L1400,360 L1440,410 Z" fill="#eaf2fb" opacity="0.8"/>
+        <!-- pipe base -->
+        <rect x="-50" y="536" width="1700" height="48" fill="#0a1826" opacity="0.35"/>
+        <line x1="-50" y1="536" x2="1650" y2="536" stroke="#ffffff" stroke-opacity="0.12"/>
+        <line x1="-50" y1="584" x2="1650" y2="584" stroke="#ffffff" stroke-opacity="0.12"/>
 
-        <!-- front mountain range -->
-        <path d="M0,650 L220,480 L380,620 L560,440 L760,640 L960,470 L1160,630 L1360,480 L1600,640 L1600,900 L0,900 Z" fill="url(#mtFront)"/>
-        <path d="M180,500 L220,450 L270,500 Z" fill="#f4f8fd" opacity="0.9"/>
-        <path d="M720,480 L760,430 L810,480 Z" fill="#f4f8fd" opacity="0.9"/>
-        <path d="M1320,500 L1360,450 L1410,500 Z" fill="#f4f8fd" opacity="0.9"/>
+        <!-- centrale de désembouage -->
+        <g transform="translate(930,470)">
+          <rect x="0" y="0" width="140" height="200" rx="20" fill="#e6ebf1"/>
+          <rect x="30" y="34" width="80" height="46" rx="10" fill="#f0752c"/>
+          <circle cx="45" cy="128" r="12" fill="#2fbf6b"/>
+          <circle cx="95" cy="128" r="12" fill="#f0752c"/>
+          <rect x="30" y="156" width="80" height="10" rx="5" fill="#c7d1db"/>
+        </g>
 
-        <!-- pipe / circuit motif -->
-        <path class="hero-pipe" d="M-50,760 C 250,700 350,820 650,750 S 1050,680 1350,740 S 1650,700 1700,760" fill="none" stroke="#f0752c" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 22"/>
-        <path d="M-50,760 C 250,700 350,820 650,750 S 1050,680 1350,740 S 1650,700 1700,760" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.35"/>
-        <circle cx="650" cy="750" r="9" fill="#f0752c"/>
-        <circle cx="1350" cy="740" r="9" fill="#f0752c"/>
+        <!-- sortie eau propre -->
+        <g stroke="#8fd0ff" stroke-width="4" fill="none" opacity="0.7" stroke-linecap="round">
+          <path d="M1090,530 H1650"/>
+          <path d="M1110,550 H1650"/>
+          <path d="M1090,570 H1650"/>
+        </g>
+        <circle r="6" fill="#bfe6ff">
+          <animateMotion dur="2.4s" repeatCount="indefinite" path="M1090,530 H1650"/>
+        </circle>
+        <circle r="5" fill="#8fd0ff">
+          <animateMotion dur="2.8s" repeatCount="indefinite" begin="0.9s" path="M1110,550 H1650"/>
+        </circle>
+        <circle r="5" fill="#bfe6ff">
+          <animateMotion dur="2.2s" repeatCount="indefinite" begin="1.6s" path="M1090,570 H1650"/>
+        </circle>
 
-        <!-- heat waves -->
-        <g stroke="#ffd7bd" stroke-opacity="0.55" stroke-width="4" fill="none" stroke-linecap="round">
-          <path d="M600,830 C 615,800 585,780 600,750"/>
-          <path d="M650,840 C 665,810 635,790 650,760"/>
-          <path d="M700,830 C 715,800 685,780 700,750"/>
+        <!-- boues aspirées vers la centrale -->
+        <g fill="#6b4a2f">
+          <circle r="10">
+            <animateMotion dur="3.2s" repeatCount="indefinite" path="M-50,540 H900"/>
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.2s" repeatCount="indefinite"/>
+          </circle>
+          <circle r="14">
+            <animateMotion dur="3.9s" repeatCount="indefinite" begin="1s" path="M-80,565 H900"/>
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="3.9s" repeatCount="indefinite"/>
+          </circle>
+          <circle r="8" opacity="0.85">
+            <animateMotion dur="2.7s" repeatCount="indefinite" begin="1.9s" path="M-40,555 H900"/>
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="2.7s" repeatCount="indefinite"/>
+          </circle>
+          <circle r="11">
+            <animateMotion dur="4.4s" repeatCount="indefinite" begin="0.4s" path="M-100,548 H900"/>
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur="4.4s" repeatCount="indefinite"/>
+          </circle>
         </g>
       </svg>
       <div class="hero-overlay"></div>
