@@ -39,11 +39,11 @@ form.addEventListener('submit', async (e) => {
       form.reset();
     } else {
       note.textContent = "Une erreur est survenue. Contactez-nous par téléphone.";
-      note.style.color = '#d9541e';
+      note.style.color = '#d9591a';
     }
   } catch (err) {
     note.textContent = "Une erreur est survenue. Contactez-nous par téléphone.";
-    note.style.color = '#d9541e';
+    note.style.color = '#d9591a';
   }
 });
 
