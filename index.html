@@ -110,52 +110,30 @@
         </defs>
 
         <rect width="1600" height="900" fill="url(#skyGrad)"/>
-        <circle cx="800" cy="450" r="350" fill="url(#sunGlow)"/>
+        <circle cx="1220" cy="450" r="380" fill="url(#sunGlow)"/>
 
-        <!-- pipe base (centrée, machine pile au milieu) -->
-        <rect x="380" y="576" width="840" height="48" fill="#0a1826" opacity="0.35"/>
-        <line x1="380" y1="576" x2="1220" y2="576" stroke="#ffffff" stroke-opacity="0.12"/>
-        <line x1="380" y1="624" x2="1220" y2="624" stroke="#ffffff" stroke-opacity="0.12"/>
-
-        <!-- centrale de désembouage : centrée en x=800 -->
-        <g transform="translate(730,470)">
-          <rect x="0" y="0" width="140" height="200" rx="20" fill="#e6ebf1"/>
-          <rect x="30" y="34" width="80" height="46" rx="10" fill="#f0752c"/>
-          <circle cx="45" cy="128" r="12" fill="#2fbf6b"/>
-          <circle cx="95" cy="128" r="12" fill="#f0752c"/>
-          <rect x="30" y="156" width="80" height="10" rx="5" fill="#c7d1db"/>
+        <!-- radiateur qui rayonne -->
+        <rect x="1080" y="280" width="280" height="340" rx="16" fill="#e6ebf1"/>
+        <g stroke="#0d3d73" stroke-width="14" stroke-linecap="round">
+          <line x1="1120" y1="280" x2="1120" y2="620"/>
+          <line x1="1170" y1="280" x2="1170" y2="620"/>
+          <line x1="1220" y1="280" x2="1220" y2="620"/>
+          <line x1="1270" y1="280" x2="1270" y2="620"/>
+          <line x1="1320" y1="280" x2="1320" y2="620"/>
         </g>
-
-        <!-- sortie eau propre -->
-        <g stroke="#8fd0ff" stroke-width="4" fill="none" opacity="0.7" stroke-linecap="round">
-          <path d="M890,590 H1220"/>
-          <path d="M910,610 H1220"/>
-          <path d="M890,630 H1220"/>
+        <g stroke="#f0752c" stroke-width="10" fill="none" stroke-linecap="round" opacity="0">
+          <animate attributeName="opacity" values="0;1;1;0" dur="2.4s" repeatCount="indefinite"/>
+          <path d="M1120,280 C1100,220 1140,180 1120,120"/>
+          <path d="M1170,280 C1150,220 1190,180 1170,120"/>
+          <path d="M1220,280 C1200,220 1240,180 1220,120"/>
+          <path d="M1270,280 C1250,220 1290,180 1270,120"/>
+          <path d="M1320,280 C1300,220 1340,180 1320,120"/>
         </g>
-        <circle r="6" fill="#bfe6ff">
-          <animateMotion dur="2.2s" repeatCount="indefinite" path="M890,590 H1220"/>
-        </circle>
-        <circle r="5" fill="#8fd0ff">
-          <animateMotion dur="2.6s" repeatCount="indefinite" begin="0.8s" path="M910,610 H1220"/>
-        </circle>
-        <circle r="5" fill="#bfe6ff">
-          <animateMotion dur="2s" repeatCount="indefinite" begin="1.4s" path="M890,630 H1220"/>
-        </circle>
-
-        <!-- boues aspirées vers la centrale -->
-        <g fill="#6b4a2f">
-          <circle r="9">
-            <animateMotion dur="2.6s" repeatCount="indefinite" path="M400,588 H730"/>
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.8;1" dur="2.6s" repeatCount="indefinite"/>
-          </circle>
-          <circle r="12">
-            <animateMotion dur="3.2s" repeatCount="indefinite" begin="0.9s" path="M390,610 H730"/>
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.8;1" dur="3.2s" repeatCount="indefinite"/>
-          </circle>
-          <circle r="7" opacity="0.85">
-            <animateMotion dur="2.3s" repeatCount="indefinite" begin="1.6s" path="M410,600 H730"/>
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.8;1" dur="2.3s" repeatCount="indefinite"/>
-          </circle>
+        <g stroke="#ffb489" stroke-width="7" fill="none" stroke-linecap="round" opacity="0">
+          <animate attributeName="opacity" values="0;0;1;1;0" dur="2.4s" repeatCount="indefinite" begin="0.4s"/>
+          <path d="M1120,280 C1100,220 1140,180 1120,120"/>
+          <path d="M1220,280 C1200,220 1240,180 1220,120"/>
+          <path d="M1320,280 C1300,220 1340,180 1320,120"/>
         </g>
       </svg>
       <div class="hero-overlay"></div>
