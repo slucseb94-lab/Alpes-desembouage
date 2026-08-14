@@ -473,6 +473,40 @@ p { color: var(--gray-600); margin-bottom: 14px; }
 .cta-banner h2 { color: var(--white); margin-bottom: 8px; }
 .cta-banner p { color: rgba(255,255,255,0.8); margin-bottom: 0; }
 
+/* Avis Google */
+.reviews-wrap { text-align: center; }
+.reviews-wrap .tag, .reviews-wrap h2 { display: block; }
+.reviews-card {
+  max-width: 360px;
+  margin: 32px auto 0;
+  background: var(--white);
+  border: 1px solid var(--gray-100);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 36px 30px;
+}
+.reviews-stars {
+  color: var(--orange-500);
+  font-size: 1.8rem;
+  letter-spacing: 4px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+.reviews-score {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 2.4rem;
+  color: var(--blue-900);
+  margin-bottom: 22px;
+}
+.reviews-score span {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 1rem;
+  color: var(--gray-600);
+  margin-left: 4px;
+}
+
 .contact-list li {
   padding: 14px 0;
   border-bottom: 1px solid var(--gray-300);
