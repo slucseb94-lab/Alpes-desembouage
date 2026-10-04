@@ -642,3 +642,6 @@ p { color: var(--gray-600); margin-bottom: 14px; }
   .hero { min-height: 440px; padding: 56px 0 30px; }
   .process-steps { grid-template-columns: 1fr; }
 }
+
+/* Champ piège anti-robots du formulaire de contact (invisible pour les visiteurs) */
+.form-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
