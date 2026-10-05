@@ -8,7 +8,8 @@
     contacte: { label: 'Contacté', color: '#7c5cc4' },
     devis: { label: 'Devis envoyé', color: '#e0691f' },
     client: { label: 'Client', color: '#1f9d55' },
-    perdu: { label: 'Perdu', color: '#8a94a3' }
+    perdu: { label: 'Perdu', color: '#8a94a3' },
+    indesirable: { label: 'Arnaque / robot', color: '#b3261e' }
   };
   const CLIENT_TYPES = { particulier: 'Particulier', professionnel: 'Professionnel', syndic: 'Syndic / copropriété' };
   const APPT_TYPES = { visite: 'Visite technique', desembouage: 'Désembouage', entretien: 'Entretien', sav: 'SAV / dépannage', autre: 'Autre' };
@@ -34,6 +35,9 @@
   const ACT_TYPES = {
     note: { label: 'Note', color: '#5a6472' },
     appel: { label: 'Appel', color: '#1c74c4' },
+    joint: { label: 'Joint au téléphone', color: '#1c74c4' },
+    vocal: { label: 'Message vocal laissé', color: '#c05621' },
+    sans_reponse: { label: 'Appel sans réponse', color: '#8a94a3' },
     sms: { label: 'SMS', color: '#7c5cc4' },
     email: { label: 'E-mail', color: '#0e8a8a' },
     visite: { label: 'Visite / intervention', color: '#1f9d55' },
@@ -707,9 +711,35 @@
       badge(APPT_STATUS, a.status) + '</a>';
   }
 
-  function clientRow(c) {
+  // Actions de suivi d'un prospect, enregistrées en un clic depuis sa fiche.
+  const FOLLOW_UPS = [
+    ['joint', 'Joint au téléphone'],
+    ['vocal', 'Message vocal laissé'],
+    ['sans_reponse', 'Pas de réponse'],
+    ['email', 'E-mail envoyé'],
+    ['sms', 'SMS envoyé']
+  ];
+  const FOLLOW_UP_TYPES = FOLLOW_UPS.map((f) => f[0]).concat(['appel']);
+
+  // Dernière action de suivi (appel, message, e-mail…) de chaque client, pour la liste et le pipeline.
+  function lastFollowUps() {
+    const map = {};
+    S.data.activities.forEach((a) => {
+      if (!FOLLOW_UP_TYPES.includes(a.type)) return;
+      if (!map[a.client_id] || a.created_at > map[a.client_id].created_at) map[a.client_id] = a;
+    });
+    return map;
+  }
+  const followUpText = (a) => (a ? (ACT_TYPES[a.type] || ACT_TYPES.note).label + ' ' + relTime(a.created_at) : '');
+
+  function clientRow(c, last) {
+    const sub = [c.city, c.phone].filter(Boolean).join(' · ');
+    const action = last === undefined ? lastFollowUps()[c.id] : last;
+    const never = !action && ['nouveau', 'contacte'].includes(c.status);
     return '<a class="row" href="#/clients/' + c.id + '"><div class="avatar" style="--c:' + STATUS[c.status].color + '">' + esc(c.name.trim().charAt(0).toUpperCase()) + '</div>' +
-      '<div class="row-main"><div class="row-title">' + esc(c.name) + '</div><div class="row-sub">' + esc([c.city, c.phone].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<div class="row-main"><div class="row-title">' + esc(c.name) + '</div><div class="row-sub">' + esc(sub) +
+      (action ? (sub ? ' · ' : '') + '<span class="last-act" style="--c:' + ACT_TYPES[action.type].color + '">' + esc(followUpText(action)) + '</span>' : '') +
+      (never ? (sub ? ' · ' : '') + '<span class="last-act" style="--c:#b3261e">Jamais contacté</span>' : '') + '</div></div>' +
       badge(STATUS, c.status) + '</a>';
   }
 
@@ -830,14 +860,15 @@
     const st = params.get('s') || '';
     const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
     const nq = norm(qtxt);
-    const list = S.data.clients.filter((c) => (!st || c.status === st) &&
+    const lasts = lastFollowUps();
+    const list = S.data.clients.filter((c) => (st ? c.status === st : c.status !== 'indesirable') &&
       (!nq || norm([c.name, c.company, c.city, c.phone, c.email, c.postal_code].join(' ')).includes(nq) || String(c.phone || '').replace(/\s/g, '').includes(nq.replace(/\s/g, ''))))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
-    let html = pageHead('Clients & prospects', S.data.clients.length + ' fiches', '<button class="btn btn-primary" data-action="new-client">' + icon('plus') + '<span class="hide-sm">Nouvelle fiche</span></button>');
+    let html = pageHead('Clients & prospects', S.data.clients.filter((c) => c.status !== 'indesirable').length + ' fiches','<button class="btn btn-primary" data-action="new-client">' + icon('plus') + '<span class="hide-sm">Nouvelle fiche</span></button>');
     html += '<div class="toolbar wrap"><label class="search">' + icon('search') + '<input type="search" id="client-search" placeholder="Nom, ville, téléphone…" value="' + esc(params.get('q') || '') + '"></label>' +
       '<div class="chips">' + '<a class="chip' + (!st ? ' on' : '') + '" href="#/clients' + (qtxt ? '?q=' + encodeURIComponent(qtxt) : '') + '">Tous</a>' +
       Object.entries(STATUS).map(([k, v]) => '<a class="chip' + (st === k ? ' on' : '') + '" style="--c:' + v.color + '" href="#/clients?s=' + k + (qtxt ? '&q=' + encodeURIComponent(qtxt) : '') + '">' + esc(v.label) + ' <b>' + S.data.clients.filter((c) => c.status === k).length + '</b></a>').join('') + '</div></div>';
-    html += '<section class="card flush"><div class="list" id="client-list">' + (list.length ? list.map(clientRow).join('') : empty('Aucune fiche ne correspond.')) + '</div></section>';
+    html += '<section class="card flush"><div class="list" id="client-list">' + (list.length ? list.map((c) => clientRow(c, lasts[c.id] || null)).join('') : empty('Aucune fiche ne correspond.')) + '</div></section>';
     return html;
   }
 
@@ -857,6 +888,11 @@
       Object.entries(STATUS).map(([k, v]) => '<option value="' + k + '"' + (c.status === k ? ' selected' : '') + '>' + esc(v.label) + '</option>').join('') + '</select>' +
       '<span class="muted small">Fiche créée ' + relTime(c.created_at) + (c.source ? ' · ' + esc(c.source) : '') + '</span></div>';
     html += contactButtons(c);
+    if (c.status !== 'client') {
+      html += '<div class="follow"><span class="follow-label">Suivi du contact :</span>' +
+        FOLLOW_UPS.map(([k, label]) => '<button class="chip follow-chip" style="--c:' + ACT_TYPES[k].color + '" data-action="follow-up" data-client="' + c.id + '" data-type="' + k + '">' + esc(label) + '</button>').join('') +
+        (c.status !== 'indesirable' ? '<button class="chip follow-chip spam" data-action="mark-spam" data-client="' + c.id + '">Arnaque / robot</button>' : '') + '</div>';
+    }
 
     html += '<div class="grid-2">';
     html += card('Coordonnées', '<div class="infos">' + info('Téléphone', c.phone) + info('E-mail', c.email) + info('Adresse', fullAddress(c)) +
@@ -884,7 +920,7 @@
 
     html += '<section class="card span-2"><header class="card-head"><h3>Historique</h3></header>' +
       '<form class="note-form" data-client="' + c.id + '"><select name="type">' +
-      ['note', 'appel', 'email', 'visite'].map((k) => '<option value="' + k + '">' + ACT_TYPES[k].label + '</option>').join('') + '</select>' +
+      ['note', 'joint', 'vocal', 'sans_reponse', 'email', 'sms', 'visite'].map((k) => '<option value="' + k + '">' + ACT_TYPES[k].label + '</option>').join('') + '</select>' +
       '<input name="content" placeholder="Ajouter une note, un compte-rendu d\'appel…" required><button class="btn btn-primary btn-sm" type="submit">Ajouter</button></form>' +
       (acts.length ? '<ol class="timeline">' + acts.map((a) => {
         const t = ACT_TYPES[a.type] || ACT_TYPES.note, u = profile(a.user_id);
@@ -897,7 +933,7 @@
   function viewPipeline() {
     let html = pageHead('Pipeline', 'Glissez une fiche pour changer son statut', '<button class="btn btn-primary" data-action="new-client">' + icon('plus') + '<span class="hide-sm">Nouveau prospect</span></button>');
     html += '<div class="board">';
-    Object.entries(STATUS).forEach(([k, v]) => {
+    Object.entries(STATUS).filter(([k]) => k !== 'indesirable').forEach(([k, v]) => {
       const items = S.data.clients.filter((c) => c.status === k).sort((a, b) => b.created_at.localeCompare(a.created_at));
       const amount = items.reduce((s, c) => s + S.data.quotes.filter((q) => q.client_id === c.id && (k === 'client' ? q.status === 'accepte' : q.status === 'envoye')).reduce((x, q) => x + Number(q.amount || 0), 0), 0);
       html += '<div class="col" data-status="' + k + '" style="--c:' + v.color + '"><div class="col-head"><span>' + esc(v.label) + '</span><b>' + items.length + '</b></div>' +
@@ -1246,6 +1282,23 @@
     'reset-demo': async (el) => {
       if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : tout effacer ?'; return; }
       S.resetDemo(); await S.signOut(); await S.loadAll(); location.hash = '#/'; render(); toast('Démo réinitialisée');
+    },
+    'follow-up': async (el) => {
+      const c = client(el.dataset.client), type = el.dataset.type;
+      const label = FOLLOW_UPS.find((f) => f[0] === type)[1];
+      await guard(async () => {
+        await logActivity(c.id, type, label);
+        // Un premier contact tenté fait passer le nouveau prospect en « Contacté ».
+        if (c.status === 'nouveau') await setClientStatus(c, 'contacte');
+      });
+      toast(label + ' — noté');
+      render();
+    },
+    'mark-spam': async (el) => {
+      if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : arnaque / robot ?'; return; }
+      await guard(() => setClientStatus(client(el.dataset.client), 'indesirable'));
+      toast('Classé « Arnaque / robot » — masqué des listes');
+      location.hash = '#/clients';
     },
     'reset-templates': async () => { await guard(() => S.saveSetting('sms_templates', {})); toast('Modèles réinitialisés'); render(); },
     'change-password': () => openForm({

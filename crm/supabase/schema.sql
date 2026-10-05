@@ -46,7 +46,7 @@ create table public.clients (
   city text default '',
   country text not null default 'FR',
   source text default '',
-  status text not null default 'nouveau' check (status in ('nouveau', 'contacte', 'devis', 'client', 'perdu')),
+  status text not null default 'nouveau' check (status in ('nouveau', 'contacte', 'devis', 'client', 'perdu', 'indesirable')),
   assigned_to uuid references public.profiles (id) on delete set null,
   heating_type text default '',
   boiler_brand text default '',
