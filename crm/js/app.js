@@ -201,6 +201,8 @@
       input = '<select id="' + id + '" name="' + f.name + '"' + req + '>' +
         (f.empty !== undefined ? '<option value="">' + esc(f.empty) + '</option>' : '') +
         opts.map(([k, l]) => '<option value="' + esc(k) + '"' + (String(val) === String(k) ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>';
+    } else if (f.type === 'file') {
+      input = '<input id="' + id + '" name="' + f.name + '" type="file" accept="' + esc(f.accept || '') + '">';
     } else if (f.type === 'textarea') {
       input = '<textarea id="' + id + '" name="' + f.name + '" rows="' + (f.rows || 3) + '"' + req + ' placeholder="' + esc(f.placeholder || '') + '">' + esc(val) + '</textarea>';
     } else {
@@ -238,6 +240,7 @@
       const out = {};
       opts.fields.forEach((f) => {
         if (!f.name) return;
+        if (f.type === 'file') { out[f.name] = form.elements[f.name].files[0] || null; return; }
         let v = form.elements[f.name].value.trim();
         if (f.type === 'number') v = v === '' ? null : Number(v);
         else if (f.type === 'datetime-local') v = v ? new Date(v).toISOString() : null;
@@ -360,24 +363,117 @@
         { name: 'sent_date', label: "Date d'envoi", type: 'date', half: true },
         { name: 'status', label: 'Statut', type: 'select', options: Object.fromEntries(Object.entries(QUOTE_STATUS).map(([k, v]) => [k, v.label])), half: true },
         { name: 'notes', label: 'Notes', type: 'textarea', rows: 2 }
-      ],
+      ].concat(q && q.sign_status === 'signe' ? [] : [{
+        name: 'pdf', label: q && q.pdf_path ? 'Remplacer le PDF du devis' : 'PDF du devis (export Tolteck)', type: 'file', accept: 'application/pdf',
+        hint: 'Nécessaire pour la signature électronique par le client.'
+      }]),
       values: q || { sent_date: ymd(new Date()), status: 'envoye' },
       onSubmit: async (v) => {
         const cid = q ? q.client_id : clientId;
         const c = client(cid);
-        if (q) await S.update('quotes', q.id, v);
+        const pdf = v.pdf;
+        delete v.pdf;
+        let row;
+        if (q) row = await S.update('quotes', q.id, v);
         else {
           v.client_id = cid;
-          await S.insert('quotes', v);
+          row = await S.insert('quotes', v);
           await logActivity(cid, 'email', 'Devis ' + (v.reference || '') + ' envoyé (' + fmtMoney(v.amount) + ')');
         }
+        if (pdf) row = await S.uploadQuotePdf(row, pdf);
         if (v.status === 'accepte') await setClientStatus(c, 'client', 'devis accepté');
         else if (v.status === 'envoye' && ['nouveau', 'contacte'].includes(c.status)) await setClientStatus(c, 'devis');
         else if (v.status === 'refuse' && c.status === 'devis' && !S.data.quotes.some((x) => x.client_id === cid && x.status === 'envoye')) await setClientStatus(c, 'perdu', 'devis refusé');
         toast('Devis enregistré');
+        return row;
       },
+      after: (row) => { if (row && row.pdf_path && row.sign_status === 'aucune' && pdfChanged(q, row)) quoteSheet(row); },
       onDelete: q ? async () => { await S.remove('quotes', q.id); toast('Devis supprimé'); } : null
     });
+  }
+  const pdfChanged = (before, after) => !before || before.doc_hash !== after.doc_hash;
+
+  // ---------------------------------------------------------------- signature électronique
+  const signUrl = (q) => location.origin + location.pathname.replace(/index\.html$/, '') + 'signer.html?t=' + q.sign_token;
+
+  function signBadge(q) {
+    if (q.sign_status === 'signe') return '<span class="badge" style="--c:#1f9d55">Signé</span>';
+    if (q.sign_status === 'envoye') return '<span class="badge" style="--c:#7c5cc4">En signature</span>';
+    return '';
+  }
+
+  async function downloadSignedQuote(q) {
+    const c = client(q.client_id) || {};
+    const bytes = await S.getQuotePdf(q.pdf_path);
+    const out = await window.SignedPdf.build(bytes, Object.assign({}, q, { client_name: c.name, company_name: company().name }));
+    window.SignedPdf.download(out, 'Devis-' + (q.reference || 'signe').replace(/[^\w-]+/g, '_') + '-signe.pdf');
+  }
+
+  async function openQuotePdf(q) {
+    const bytes = await S.getQuotePdf(q.pdf_path);
+    window.open(URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), '_blank');
+  }
+
+  function quoteSheet(q) {
+    q = S.data.quotes.find((x) => x.id === q.id) || q;
+    const c = client(q.client_id) || { name: 'Client', country: 'FR' };
+    let body = '<div class="pay-head"><span class="pay-amount">' + esc(fmtMoney(q.amount)) + '</span><span class="muted">Devis ' + esc(q.reference || '(sans numéro)') + ' · ' + esc(c.name) + '</span>' +
+      '<span class="small muted">' + badge(QUOTE_STATUS, q.status) + ' ' + signBadge(q) + '</span></div>';
+
+    if (q.sign_status === 'signe') {
+      body += '<div class="pay-done">✓ Signé par ' + esc(q.signer_name) + ' le ' + esc(fmt(q.signed_at, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</div>' +
+        '<div class="pay-actions"><button class="btn btn-primary" data-q="signed">Télécharger le devis signé (PDF)</button></div>';
+    } else if (!q.pdf_path) {
+      body += '<p class="muted center">Ajoutez le PDF du devis (export Tolteck) pour pouvoir le faire signer en ligne.</p>' +
+        '<div class="pay-actions"><button class="btn btn-primary" data-q="edit">Ajouter le PDF</button></div>';
+    } else if (q.sign_status === 'aucune') {
+      body += '<p class="center">Le client recevra un lien pour <b>lire et signer le devis</b> sur son téléphone. Le lien est valable 30 jours.</p>' +
+        '<div class="pay-actions"><button class="btn btn-primary btn-lg" data-q="send">Envoyer pour signature</button></div>';
+    } else {
+      const url = signUrl(q);
+      const sms = 'Bonjour ' + c.name + ', voici votre devis ' + (q.reference || '') + ' (' + fmtMoney(q.amount) + ') à consulter et signer en ligne : ' + url + ' ' + company().name;
+      const expired = q.sign_expires_at && new Date(q.sign_expires_at) < new Date();
+      body += (expired ? '<p class="error">Le lien a expiré le ' + esc(fmtDate(q.sign_expires_at)) + '.</p><div class="pay-actions"><button class="btn btn-primary" data-q="send">Renouveler le lien (30 jours)</button></div>'
+        : '<p class="center muted small">Envoyé ' + esc(relTime(q.sign_sent_at)) + ' · lien valable jusqu\'au ' + esc(fmtDate(q.sign_expires_at)) + '</p>' +
+          '<div class="pay-actions">' +
+          (c.phone ? '<a class="btn btn-ghost" href="' + esc(smsUrl(c, sms)) + '" data-q="log-sms">' + icon('sms') + 'Envoyer par SMS</a>' : '') +
+          (c.email ? '<a class="btn btn-ghost" href="mailto:' + esc(c.email) + '?subject=' + encodeURIComponent('Votre devis ' + (q.reference || '') + ' — ' + company().name) + '&body=' + encodeURIComponent(sms) + '">' + icon('mail') + 'Par e-mail</a>' : '') +
+          '<button class="btn btn-ghost" data-q="copy">' + icon('copy') + 'Copier le lien</button>' +
+          '<a class="btn btn-ghost" href="' + esc(url) + '" target="_blank" rel="noopener">Voir la page client</a></div>' +
+          '<div class="pay-status"><span class="dot"></span>En attente de signature…</div>');
+    }
+    body += '<div class="pay-admin">' + (q.pdf_path ? '<button class="btn btn-ghost btn-sm" data-q="pdf">Voir le PDF d\'origine</button>' : '') +
+      '<button class="btn btn-ghost btn-sm" data-q="edit">' + icon('edit') + 'Modifier le devis</button></div>';
+
+    openSheet('Devis', body, (root) => {
+      const on = (k, fn) => root.querySelectorAll('[data-q=' + k + ']').forEach((b) => b.addEventListener('click', fn));
+      on('edit', () => { closeModal(); editQuote(q); });
+      on('pdf', () => guard(() => openQuotePdf(q)));
+      on('signed', (e) => { e.target.disabled = true; guard(() => downloadSignedQuote(q)).finally(() => { e.target.disabled = false; }); });
+      on('copy', () => navigator.clipboard.writeText(signUrl(q)).then(() => toast('Lien copié'), () => toast('Copie impossible', true)));
+      on('log-sms', () => logActivity(q.client_id, 'sms', 'Lien de signature du devis ' + (q.reference || '') + ' envoyé par SMS').catch(() => {}));
+      on('send', async () => {
+        const now = new Date();
+        const row = await guard(() => S.update('quotes', q.id, { sign_status: 'envoye', sign_sent_at: now.toISOString(), sign_expires_at: addDays(now, 30).toISOString(), status: 'envoye' }));
+        await logActivity(q.client_id, 'note', 'Devis ' + (q.reference || '') + ' envoyé pour signature électronique');
+        const cl = client(q.client_id);
+        if (cl && ['nouveau', 'contacte'].includes(cl.status)) await setClientStatus(cl, 'devis');
+        render(); quoteSheet(row);
+      });
+    });
+
+    // Le client signe pendant que la fenêtre est ouverte : on le voit tout de suite.
+    if (q.sign_status === 'envoye') {
+      clearInterval(pollTimer);
+      modal.dataset.payment = 'q-' + q.id;
+      pollTimer = setInterval(async () => {
+        if (!modal.open || modal.dataset.payment !== 'q-' + q.id) { clearInterval(pollTimer); return; }
+        try {
+          const row = await S.refresh('quotes', q.id);
+          if (row.sign_status === 'signe') { clearInterval(pollTimer); await S.loadAll(); render(); quoteSheet(row); toast('Devis signé !'); }
+        } catch (e) { /* réseau */ }
+      }, 5000);
+    }
   }
 
   // Fenêtre « Envoyer un SMS » : choix d'un modèle, ouvre l'appli SMS du téléphone.
@@ -775,8 +871,8 @@
 
     if (S.isAdmin()) {
       html += card('Devis', (quotes.length ? '<div class="list">' + quotes.map((q) =>
-        '<button class="row" data-action="edit-quote" data-quote="' + q.id + '"><div class="row-main"><div class="row-title">' + esc(q.reference || 'Devis') + ' · ' + fmtMoney(q.amount) + '</div>' +
-        '<div class="row-sub">Envoyé le ' + fmtDate(q.sent_date) + (q.notes ? ' · ' + esc(q.notes) : '') + '</div></div>' + badge(QUOTE_STATUS, q.status) + '</button>').join('') + '</div>'
+        '<button class="row" data-action="open-quote" data-quote="' + q.id + '"><div class="row-main"><div class="row-title">' + esc(q.reference || 'Devis') + ' · ' + fmtMoney(q.amount) + '</div>' +
+        '<div class="row-sub">Envoyé le ' + fmtDate(q.sent_date) + (q.notes ? ' · ' + esc(q.notes) : '') + '</div></div>' + signBadge(q) + badge(QUOTE_STATUS, q.status) + '</button>').join('') + '</div>'
         : empty('Aucun devis enregistré.')) + '<p class="muted small pad">Les devis restent créés dans Tolteck : notez ici le numéro et le montant pour le suivi.</p>',
         '<button class="btn btn-ghost btn-sm" data-action="new-quote" data-client="' + c.id + '">' + icon('plus') + 'Devis</button>');
     }
@@ -1082,6 +1178,7 @@
     'edit-appt': (el) => editAppointment(S.data.appointments.find((a) => a.id === el.dataset.appt)),
     'new-quote': (el) => editQuote(null, el.dataset.client),
     'edit-quote': (el) => editQuote(S.data.quotes.find((q) => q.id === el.dataset.quote)),
+    'open-quote': (el) => quoteSheet(S.data.quotes.find((q) => q.id === el.dataset.quote)),
     'sms': (el) => { const a = el.dataset.appt && S.data.appointments.find((x) => x.id === el.dataset.appt); smsSheet(client(el.dataset.client), { appt: a }, a ? 'rappel' : null); },
     'sms-quote': (el) => { const q = S.data.quotes.find((x) => x.id === el.dataset.quote); smsSheet(client(q.client_id), { quote: q }, 'relance_devis'); },
     'sms-service': (el) => smsSheet(client(el.dataset.client), {}, 'entretien'),

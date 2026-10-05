@@ -23,13 +23,10 @@
   <dialog id="modal"></dialog>
 
   <script src="js/config.js"></script>
-  <script>
-    // La librairie Supabase n'est chargée que si le mode réel est configuré.
-    if (window.CRM_CONFIG && window.CRM_CONFIG.supabaseUrl) {
-      document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"><\/script>');
-    }
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="js/signed-pdf.js"></script>
   <script src="js/store.js"></script>
   <script src="js/app.js"></script>
 </body>

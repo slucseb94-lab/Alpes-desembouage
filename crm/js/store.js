@@ -201,6 +201,39 @@
     return this.refresh('payments', paymentId);
   };
 
+  // ---------------------------------------------------------------- PDF des devis (signature électronique)
+  // Dépose le PDF d'un devis. Le dossier porte le « jeton » secret du lien de signature.
+  Store.uploadQuotePdf = async function (quote, file) {
+    if (file.type && file.type !== 'application/pdf') throw new Error('Le fichier doit être un PDF.');
+    if (file.size > 10 * 1024 * 1024) throw new Error('PDF trop lourd (10 Mo maximum).');
+    const bytes = await file.arrayBuffer();
+    const doc_hash = await window.SignedPdf.sha256Hex(bytes);
+    const sign_token = quote.sign_token || newId();
+    const path = sign_token + '/devis.pdf';
+    if (this.mode === 'demo') {
+      if (file.size > 1.5 * 1024 * 1024) throw new Error('En mode démo, PDF limité à 1,5 Mo (stockage du navigateur).');
+      const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      demoDb.files = demoDb.files || {};
+      demoDb.files[path] = dataUrl;
+      demoSave();
+    } else {
+      const { error } = await this.sb.storage.from('devis').upload(path, file, { upsert: true, contentType: 'application/pdf' });
+      if (error) throw new Error('Envoi du PDF impossible : ' + error.message);
+    }
+    return this.update('quotes', quote.id, { pdf_path: path, doc_hash, sign_token, sign_status: 'aucune', sign_sent_at: null, sign_expires_at: null });
+  };
+
+  Store.getQuotePdf = async function (path) {
+    if (this.mode === 'demo') {
+      const dataUrl = (demoDb.files || {})[path];
+      if (!dataUrl) throw new Error('PDF introuvable.');
+      return (await fetch(dataUrl)).arrayBuffer();
+    }
+    const { data, error } = await this.sb.storage.from('devis').download(path);
+    if (error) throw new Error('PDF introuvable : ' + error.message);
+    return data.arrayBuffer();
+  };
+
   // Relit une ligne depuis la base (utilisé pour savoir si le client a payé).
   Store.refresh = async function (table, id) {
     let row;
