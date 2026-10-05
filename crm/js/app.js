@@ -41,6 +41,7 @@
     sms: { label: 'SMS', color: '#7c5cc4' },
     email: { label: 'E-mail', color: '#0e8a8a' },
     visite: { label: 'Visite / intervention', color: '#1f9d55' },
+    demande: { label: 'Demande reçue (site)', color: '#0e8a8a' },
     statut: { label: 'Changement de statut', color: '#e0691f' }
   };
   const SOURCES = ['Google / Fiche Google', 'Site internet', 'Bouche-à-oreille', 'Recommandation client', 'Partenaire / plombier', 'Réseaux sociaux', 'Autre'];
@@ -53,6 +54,7 @@
     rappel: { label: 'Rappel de rendez-vous', text: 'Bonjour {nom}, nous vous rappelons votre rendez-vous ({type}) le {date} à {heure}. En cas d\'empêchement, merci de répondre à ce SMS. {entreprise}' },
     en_route: { label: 'Technicien en route', text: 'Bonjour {nom}, {technicien} est en route et arrivera chez vous dans environ 30 minutes. {entreprise}' },
     termine: { label: 'Intervention terminée', text: 'Bonjour {nom}, l\'intervention est terminée. Merci pour votre confiance ! Si vous êtes satisfait, un avis Google nous aiderait beaucoup : {lien_avis}' },
+    relance_prospect: { label: 'Relance prospect', text: 'Bonjour {nom}, je reviens vers vous suite à votre demande concernant votre installation de chauffage. Quand pourrais-je vous rappeler ? {entreprise}' },
     relance_devis: { label: 'Relance de devis', text: 'Bonjour {nom}, avez-vous pu consulter notre devis {reference} ? Je reste disponible pour toute question. {entreprise}' },
     entretien: { label: 'Entretien à prévoir', text: 'Bonjour {nom}, votre dernier désembouage date de {dernier_entretien}. Il est conseillé de prévoir un entretien pour garder un chauffage performant. Souhaitez-vous fixer un rendez-vous ? {entreprise}' },
     paiement: { label: 'Lien de paiement par carte', text: 'Bonjour {nom}, voici le lien sécurisé pour régler {montant} par carte bancaire : {lien_paiement} Merci pour votre confiance ! {entreprise}' },
@@ -155,11 +157,152 @@
     return S.insert('activities', { client_id, type, content, user_id: S.user.id });
   }
 
+  // Change le statut d'une fiche. Passage en « Perdu » : le motif est demandé (renvoie false si on annule).
   async function setClientStatus(c, status, reason) {
-    if (!c || c.status === status) return;
+    if (!c || c.status === status) return true;
+    if (status === 'perdu' && reason === undefined) {
+      reason = await askLostReason(c);
+      if (reason === null) return false;
+    }
     const from = STATUS[c.status].label;
-    await S.update('clients', c.id, { status });
+    const patch = { status };
+    if (status === 'perdu') patch.lost_reason = reason ? reason.charAt(0).toUpperCase() + reason.slice(1) : '';
+    if (['perdu', 'indesirable', 'client'].includes(status)) patch.next_action_at = null;
+    await S.update('clients', c.id, patch);
     await logActivity(c.id, 'statut', 'Statut : ' + from + ' → ' + STATUS[status].label + (reason ? ' (' + reason + ')' : ''));
+    return true;
+  }
+
+  // ---------------------------------------------------------------- motif de perte
+  const LOST_REASONS = ['Trop cher', 'Concurrent choisi', 'Injoignable / ne répond plus', 'Projet reporté ou abandonné', 'Hors zone d’intervention', 'Devis refusé', 'Autre'];
+
+  function askLostReason(c) {
+    return new Promise((resolve) => {
+      let answered = false;
+      openSheet('Pourquoi « ' + c.name + ' » est perdu ?',
+        '<p class="muted small">Pour savoir où vous perdez des clients.</p><div class="quick">' +
+        LOST_REASONS.map((r) => '<button class="btn btn-ghost" data-r="' + esc(r) + '">' + esc(r) + '</button>').join('') + '</div>' +
+        '<label class="field"><span>Précision (facultatif)</span><input id="lost-detail" placeholder="ex. a pris le plombier du coin"></label>',
+        (root) => {
+          root.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => {
+            answered = true;
+            const d = $('#lost-detail', root).value.trim();
+            closeModal();
+            resolve(b.dataset.r + (d ? ' — ' + d : ''));
+          }));
+          modal.addEventListener('close', () => { if (!answered) resolve(null); }, { once: true });
+        });
+    });
+  }
+
+  // ---------------------------------------------------------------- rappels (« À rappeler le… »)
+  const todayYmd = () => ymd(new Date());
+
+  function askReminder(c, intro) {
+    const opts = [[1, 'Demain'], [2, 'Dans 2 jours'], [3, 'Dans 3 jours'], [7, 'Dans 1 semaine'], [14, 'Dans 2 semaines']];
+    openSheet('À rappeler quand ?',
+      (intro ? '<p class="muted small">' + esc(intro) + '</p>' : '') +
+      '<div class="quick">' + opts.map(([n, l]) => '<button class="btn btn-ghost" data-days="' + n + '">' + l + ' <span class="muted small">· ' + esc(fmtDate(ymd(addDays(new Date(), n)))) + '</span></button>').join('') + '</div>' +
+      '<div class="remind-custom"><label class="field"><span>Autre date</span><input type="date" id="remind-date" min="' + todayYmd() + '"></label>' +
+      '<label class="field"><span>Note (facultatif)</span><input id="remind-note" placeholder="ex. rappeler après 18 h" value="' + esc(c.next_action_note || '') + '"></label>' +
+      '<button class="btn btn-primary" data-days="custom">Valider la date</button></div>' +
+      '<div class="pay-actions"><button class="btn btn-danger-ghost btn-sm" data-days="none">Pas de rappel</button></div>',
+      (root) => root.querySelectorAll('[data-days]').forEach((b) => b.addEventListener('click', async () => {
+        const v = b.dataset.days;
+        let date = null;
+        if (v === 'custom') { date = $('#remind-date', root).value; if (!date) { toast('Choisissez une date.', true); return; } }
+        else if (v !== 'none') date = ymd(addDays(new Date(), Number(v)));
+        await guard(() => S.update('clients', c.id, { next_action_at: date, next_action_note: date ? $('#remind-note', root).value.trim() : '' }));
+        closeModal();
+        toast(date ? 'Rappel programmé le ' + fmtDate(date) : 'Pas de rappel');
+        render();
+      })));
+  }
+
+  function reminderLabel(date) {
+    const n = Math.round((parseYmd(date) - parseYmd(todayYmd())) / 86400000);
+    if (n < 0) return { text: 'en retard de ' + -n + ' j', late: true };
+    if (n === 0) return { text: "aujourd'hui", late: false };
+    if (n === 1) return { text: 'demain', late: false };
+    return { text: 'le ' + fmtDate(date), late: false };
+  }
+
+  // ---------------------------------------------------------------- doublons
+  const digits9 = (p) => String(p || '').replace(/\D/g, '').slice(-9);
+  const normName = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^a-z0-9]/g, '');
+
+  function findDuplicate(v, exceptId) {
+    const ph = digits9(v.phone), em = String(v.email || '').trim().toLowerCase(), nm = normName(v.name);
+    for (const c of S.data.clients) {
+      if (c.id === exceptId) continue;
+      if (ph.length === 9 && digits9(c.phone) === ph) return { c, why: 'numéro de téléphone' };
+      if (em && String(c.email || '').toLowerCase() === em) return { c, why: 'e-mail' };
+      if (nm.length > 3 && normName(c.name) === nm && (!v.city || normName(c.city) === normName(v.city))) return { c, why: 'nom' };
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- e-mails (envoyés depuis le Gmail du gérant)
+  const emailCfg = () => S.data.settings.email || {};
+  const emailReady = () => !!(emailCfg().script_url && emailCfg().secret);
+
+  async function callMailScript(payload) {
+    const cfg = emailCfg();
+    let res;
+    try {
+      res = await fetch(cfg.script_url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ secret: cfg.secret }, payload)) });
+    } catch (e) { throw new Error("Impossible de joindre le service d'envoi (vérifiez l'URL du script)."); }
+    let data;
+    try { data = await res.json(); } catch (e) { throw new Error("Réponse inattendue du script Google : vérifiez qu'il est déployé pour « Tout le monde »."); }
+    if (!data.ok) throw new Error('Envoi impossible : ' + (data.error || 'erreur inconnue'));
+    return data;
+  }
+
+  // Corps HTML sobre : paragraphes, et le lien principal transformé en bouton.
+  function emailHtml(text, link, linkLabel) {
+    const co = company();
+    const body = esc(text).split(/\n{2,}/).map((p) => {
+      if (link && p.trim() === esc(link)) {
+        return '<p style="margin:24px 0"><a href="' + esc(link) + '" style="background:#145a9e;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">' + esc(linkLabel || 'Ouvrir') + '</a></p>';
+      }
+      return '<p style="margin:0 0 14px">' + p.replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#145a9e">$1</a>') + '</p>';
+    }).join('');
+    return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1a1f27;max-width:560px">' + body +
+      '<p style="margin-top:28px;color:#5a6472;font-size:13px">' + esc(co.name) + ' · <a href="https://www.alpes-desembouage.fr" style="color:#5a6472">www.alpes-desembouage.fr</a></p></div>';
+  }
+
+  const emailSignature = () => '\n\nCordialement,\n' + company().name + (S.user && S.user.phone ? '\n' + S.user.phone : '');
+
+  function emailSheet(c, opts) {
+    if (!c.email) { toast("Aucune adresse e-mail sur cette fiche.", true); return; }
+    const text0 = opts.text || ('Bonjour ' + c.name + ',\n\n' + emailSignature().trim());
+    if (!emailReady()) {
+      openSheet('E-mail à ' + c.name,
+        '<p class="muted">L\'envoi direct depuis le CRM n\'est pas encore réglé' + (S.isAdmin() ? ' (Réglages → Envoi des e-mails)' : '') + '. En attendant, l\'e-mail s\'ouvre dans votre messagerie.</p>' +
+        '<div class="pay-actions"><a class="btn btn-primary" href="mailto:' + esc(c.email) + '?subject=' + encodeURIComponent(opts.subject || '') + '&body=' + encodeURIComponent(text0) + '" data-m="open">' + icon('mail') + 'Ouvrir ma messagerie</a></div>',
+        (root) => $('[data-m=open]', root).addEventListener('click', () => logActivity(c.id, 'email', opts.logText || ('E-mail : ' + (opts.subject || ''))).catch(() => {})));
+      return;
+    }
+    openSheet('E-mail à ' + c.name,
+      '<div class="form-grid">' +
+      '<label class="field"><span>À</span><input value="' + esc(c.email) + '" disabled></label>' +
+      '<label class="field"><span>Objet</span><input id="mail-subject" value="' + esc(opts.subject || '') + '"></label>' +
+      '<label class="field"><span>Message</span><textarea id="mail-text" rows="10">' + esc(text0) + '</textarea></label>' +
+      (opts.link ? '<p class="muted small" style="grid-column:1/-1">Le lien apparaîtra sous forme de bouton « ' + esc(opts.linkLabel || 'Ouvrir') + ' » dans l\'e-mail.</p>' : '') +
+      '</div><div class="pay-actions"><button class="btn btn-primary btn-lg" data-m="send">' + icon('mail') + 'Envoyer</button></div>',
+      (root) => {
+        const btn = $('[data-m=send]', root);
+        btn.addEventListener('click', async () => {
+          const subject = $('#mail-subject', root).value.trim(), text = $('#mail-text', root).value;
+          if (!subject) { toast("Ajoutez un objet.", true); return; }
+          btn.disabled = true; btn.textContent = 'Envoi…';
+          try {
+            await guard(() => callMailScript({ to: c.email, subject, text, html: emailHtml(text, opts.link, opts.linkLabel), fromName: company().name }));
+            await logActivity(c.id, 'email', opts.logText || ('E-mail envoyé : ' + subject));
+            closeModal(); toast('E-mail envoyé à ' + c.email); render();
+          } catch (e) { btn.disabled = false; btn.innerHTML = icon('mail') + 'Envoyer'; }
+        });
+      });
   }
 
   // ================================================================ icônes
@@ -300,6 +443,7 @@
   }
 
   function editClient(c, preset) {
+    let dupWarned = null, askLost = false;
     openForm({
       title: c ? 'Modifier la fiche' : 'Nouveau prospect / client',
       fields: clientFields(),
@@ -307,10 +451,22 @@
       onSubmit: async (v) => {
         v.radiators_count = v.radiators_count == null ? null : Math.round(v.radiators_count);
         v.service_interval_months = Number(v.service_interval_months) || 36;
+        // Doublon possible : on prévient une fois, un second clic sur « Enregistrer » crée quand même la fiche.
+        const dup = findDuplicate(v, c ? c.id : null);
+        if (dup && dupWarned !== dup.c.id) {
+          dupWarned = dup.c.id;
+          const body = $('#modal .modal-body');
+          const old = $('.dup-warn', body); if (old) old.remove();
+          body.insertAdjacentHTML('afterbegin', '<div class="dup-warn">Une fiche existe déjà avec le même ' + esc(dup.why) + ' : <a href="#/clients/' + dup.c.id + '"><b>' + esc(dup.c.name) + '</b></a> (' + esc(STATUS[dup.c.status].label) + ').<br>Cliquez à nouveau sur « Enregistrer » pour ' + (c ? 'enregistrer' : 'créer la fiche') + ' quand même.</div>');
+          body.scrollTop = 0;
+          throw new Error('Fiche similaire trouvée : vérifiez avant d’enregistrer.');
+        }
         if (c) {
           const old = c.status;
+          if (v.status === 'perdu' && old !== 'perdu') askLost = true;
+          if (['indesirable', 'client'].includes(v.status)) v.next_action_at = null;
           await S.update('clients', c.id, v);
-          if (old !== v.status) await logActivity(c.id, 'statut', 'Statut : ' + STATUS[old].label + ' → ' + STATUS[v.status].label);
+          if (old !== v.status && !askLost) await logActivity(c.id, 'statut', 'Statut : ' + STATUS[old].label + ' → ' + STATUS[v.status].label);
           toast('Fiche mise à jour');
         } else {
           v.created_by = S.user.id;
@@ -318,6 +474,15 @@
           toast('Fiche créée');
           location.hash = '#/clients/' + row.id;
         }
+      },
+      after: async () => {
+        if (!askLost) return;
+        const reason = await askLostReason(c);
+        await guard(async () => {
+          await S.update('clients', c.id, { lost_reason: reason || '', next_action_at: null });
+          await logActivity(c.id, 'statut', 'Statut : → Perdu' + (reason ? ' (' + reason + ')' : ''));
+        });
+        render();
       },
       onDelete: c && S.isAdmin() ? async () => { await S.remove('clients', c.id); toast('Fiche supprimée'); location.hash = '#/clients'; } : null
     });
@@ -431,7 +596,10 @@
       body += '<p class="muted center">Ajoutez le PDF du devis (export Tolteck) pour pouvoir le faire signer en ligne.</p>' +
         '<div class="pay-actions"><button class="btn btn-primary" data-q="edit">Ajouter le PDF</button></div>';
     } else if (q.sign_status === 'aucune') {
+      const cgv = S.data.settings.cgv;
       body += '<p class="center">Le client recevra un lien pour <b>lire et signer le devis</b> sur son téléphone. Le lien est valable 30 jours.</p>' +
+        (cgv && cgv.path ? '<label class="check-line center-line"><input type="checkbox" id="with-cgv" checked> Joindre les conditions générales de vente (signées avec le devis)</label>'
+          : (S.isAdmin() ? '<p class="muted small center">Astuce : déposez vos CGV dans Réglages pour qu’elles soient signées avec le devis.</p>' : '')) +
         '<div class="pay-actions"><button class="btn btn-primary btn-lg" data-q="send">Envoyer pour signature</button></div>';
     } else {
       const url = signUrl(q);
@@ -441,7 +609,7 @@
         : '<p class="center muted small">Envoyé ' + esc(relTime(q.sign_sent_at)) + ' · lien valable jusqu\'au ' + esc(fmtDate(q.sign_expires_at)) + '</p>' +
           '<div class="pay-actions">' +
           (c.phone ? '<a class="btn btn-ghost" href="' + esc(smsUrl(c, sms)) + '" data-q="log-sms">' + icon('sms') + 'Envoyer par SMS</a>' : '') +
-          (c.email ? '<a class="btn btn-ghost" href="mailto:' + esc(c.email) + '?subject=' + encodeURIComponent('Votre devis ' + (q.reference || '') + ' — ' + company().name) + '&body=' + encodeURIComponent(sms) + '">' + icon('mail') + 'Par e-mail</a>' : '') +
+          (c.email ? '<button class="btn btn-ghost" data-q="email">' + icon('mail') + 'Par e-mail</button>' : '') +
           '<button class="btn btn-ghost" data-q="copy">' + icon('copy') + 'Copier le lien</button>' +
           '<a class="btn btn-ghost" href="' + esc(url) + '" target="_blank" rel="noopener">Voir la page client</a></div>' +
           '<div class="pay-status"><span class="dot"></span>En attente de signature…</div>');
@@ -456,9 +624,26 @@
       on('signed', (e) => { e.target.disabled = true; guard(() => downloadSignedQuote(q)).finally(() => { e.target.disabled = false; }); });
       on('copy', () => navigator.clipboard.writeText(signUrl(q)).then(() => toast('Lien copié'), () => toast('Copie impossible', true)));
       on('log-sms', () => logActivity(q.client_id, 'sms', 'Lien de signature du devis ' + (q.reference || '') + ' envoyé par SMS').catch(() => {}));
+      on('email', () => emailSheet(c, {
+        subject: 'Votre devis ' + (q.reference || '') + ' — ' + company().name,
+        text: 'Bonjour ' + c.name + ',\n\nVeuillez trouver ci-dessous votre devis ' + (q.reference || '') + ' d\'un montant de ' + fmtMoney2(q.amount) + ' TTC' +
+          (q.with_cgv ? ', accompagné de nos conditions générales de vente' : '') + '.\n\nVous pouvez le consulter et le signer en ligne, depuis votre téléphone ou votre ordinateur :\n\n' +
+          signUrl(q) + '\n\nJe reste à votre disposition pour toute question.' + emailSignature(),
+        link: signUrl(q), linkLabel: 'Consulter et signer le devis',
+        logText: 'Lien de signature du devis ' + (q.reference || '') + ' envoyé par e-mail'
+      }));
       on('send', async () => {
         const now = new Date();
-        const row = await guard(() => S.update('quotes', q.id, { sign_status: 'envoye', sign_sent_at: now.toISOString(), sign_expires_at: addDays(now, 30).toISOString(), status: 'envoye' }));
+        const btn = root.querySelector('[data-q=send]'); btn.disabled = true; btn.textContent = 'Préparation du document…';
+        const cgvBox = root.querySelector('#with-cgv');
+        const withCgv = cgvBox ? cgvBox.checked : !!q.with_cgv && !!(S.data.settings.cgv || {}).path;
+        let row;
+        try {
+          row = await guard(async () => {
+            await S.prepareSignaturePdf(q, withCgv ? S.data.settings.cgv.path : null);
+            return S.update('quotes', q.id, { sign_status: 'envoye', sign_sent_at: now.toISOString(), sign_expires_at: addDays(now, 30).toISOString(), status: 'envoye' });
+          });
+        } catch (e) { btn.disabled = false; btn.textContent = 'Envoyer pour signature'; return; }
         await logActivity(q.client_id, 'note', 'Devis ' + (q.reference || '') + ' envoyé pour signature électronique');
         const cl = client(q.client_id);
         if (cl && ['nouveau', 'contacte'].includes(cl.status)) await setClientStatus(cl, 'devis');
@@ -603,7 +788,7 @@
           '<div class="pay-status" id="pay-status"><span class="dot"></span>En attente du paiement…</div>' +
           '<div class="pay-actions">' +
           (c.phone ? '<a class="btn btn-ghost" href="' + esc(smsUrl(c, sms)) + '" data-p="log-sms">' + icon('sms') + 'Envoyer par SMS</a>' : '') +
-          (c.email ? '<a class="btn btn-ghost" href="mailto:' + esc(c.email) + '?subject=' + encodeURIComponent('Votre paiement — ' + company().name) + '&body=' + encodeURIComponent(sms) + '">' + icon('mail') + 'Par e-mail</a>' : '') +
+          (c.email ? '<button class="btn btn-ghost" data-p="email" data-kind="carte">' + icon('mail') + 'Par e-mail</button>' : '') +
           '<button class="btn btn-ghost" data-p="copy" data-text="' + esc(p.checkout_url) + '">' + icon('copy') + 'Copier le lien</button>' +
           '<a class="btn btn-ghost" href="' + esc(p.checkout_url) + '" target="_blank" rel="noopener">Ouvrir sur ce téléphone</a></div>' +
           (S.mode === 'demo' ? '<p class="muted small center">Démo : cliquez sur « Ouvrir sur ce téléphone » pour simuler le paiement du client.</p>' : '');
@@ -618,7 +803,7 @@
           '<div class="qr qr-sm">' + qrSvg(epcPayload(bank, p)) + '</div><p class="center muted small">QR code de virement : lisible par certaines applications bancaires.</p>' +
           '<div class="pay-actions">' +
           (c.phone ? '<a class="btn btn-ghost" href="' + esc(smsUrl(c, sms)) + '" data-p="log-sms">' + icon('sms') + 'Envoyer par SMS</a>' : '') +
-          (c.email ? '<a class="btn btn-ghost" href="mailto:' + esc(c.email) + '?subject=' + encodeURIComponent('Règlement par virement — ' + company().name) + '&body=' + encodeURIComponent(sms) + '">' + icon('mail') + 'Par e-mail</a>' : '') +
+          (c.email ? '<button class="btn btn-ghost" data-p="email" data-kind="virement">' + icon('mail') + 'Par e-mail</button>' : '') +
           '<button class="btn btn-ghost" data-p="copy" data-text="' + esc(sms) + '">' + icon('copy') + 'Copier</button></div>';
       }
     }
@@ -633,6 +818,21 @@
       root.dataset.payment = p.id;
       root.querySelectorAll('[data-p=copy]').forEach((b) => b.addEventListener('click', () => navigator.clipboard.writeText(b.dataset.text).then(() => toast('Copié'), () => toast('Copie impossible', true))));
       root.querySelectorAll('[data-p=log-sms]').forEach((a) => a.addEventListener('click', () => logActivity(p.client_id, 'sms', 'SMS de paiement envoyé (' + fmtMoney2(p.amount) + ')').catch(() => {})));
+      root.querySelectorAll('[data-p=email]').forEach((b) => b.addEventListener('click', () => {
+        const card = b.dataset.kind === 'carte';
+        emailSheet(c, card ? {
+          subject: 'Votre paiement — ' + company().name,
+          text: 'Bonjour ' + c.name + ',\n\nVoici le lien sécurisé pour régler ' + fmtMoney2(p.amount) + ' (' + p.description + ') par carte bancaire :\n\n' + p.checkout_url +
+            '\n\nLe lien est valable 24 heures.\n\nMerci pour votre confiance !' + emailSignature(),
+          link: p.checkout_url, linkLabel: 'Payer ' + fmtMoney2(p.amount), logText: 'Lien de paiement envoyé par e-mail (' + fmtMoney2(p.amount) + ')'
+        } : {
+          subject: 'Règlement par virement — ' + company().name,
+          text: 'Bonjour ' + c.name + ',\n\nPour régler ' + fmtMoney2(p.amount) + ' (' + p.description + ') par virement, voici nos coordonnées bancaires :\n\n' +
+            'Titulaire : ' + bank.holder + '\nIBAN : ' + bank.iban + '\nBIC : ' + bank.bic + '\nRéférence à indiquer : ' + p.reference +
+            '\n\nMerci pour votre confiance !' + emailSignature(),
+          logText: 'Coordonnées de virement envoyées par e-mail (' + fmtMoney2(p.amount) + ')'
+        });
+      }));
       const regen = $('[data-p=regen]', root);
       if (regen) regen.addEventListener('click', async () => {
         regen.disabled = true;
@@ -692,7 +892,7 @@
       b.push('<a class="action" href="tel:' + esc(intlPhone(c.phone, c.country)) + '" data-log="appel" data-client="' + c.id + '">' + icon('phone') + '<span>Appeler</span></a>');
       b.push('<button class="action" data-action="sms" data-client="' + c.id + '"' + (ctx && ctx.appt ? ' data-appt="' + ctx.appt.id + '"' : '') + '>' + icon('sms') + '<span>SMS</span></button>');
     }
-    if (c.email) b.push('<a class="action" href="mailto:' + esc(c.email) + '">' + icon('mail') + '<span>E-mail</span></a>');
+    if (c.email) b.push('<button class="action" data-action="email" data-client="' + c.id + '">' + icon('mail') + '<span>E-mail</span></button>');
     if (c.address || c.city) {
       b.push('<a class="action" href="' + esc(mapsUrl(c)) + '" target="_blank" rel="noopener">' + icon('nav') + '<span>Maps</span></a>');
       b.push('<a class="action" href="' + esc(wazeUrl(c)) + '" target="_blank" rel="noopener">' + icon('pin') + '<span>Waze</span></a>');
@@ -777,6 +977,30 @@
     html += '<div class="grid-2">';
     html += card("Aujourd'hui", today.length ? '<div class="list">' + today.map((a) => apptRow(a)).join('') + '</div>' : empty('Aucun rendez-vous aujourd\'hui.'),
       S.isAdmin() ? '<button class="btn btn-ghost btn-sm" data-action="new-appt">' + icon('plus') + 'RDV</button>' : '');
+
+    // Rappels programmés pour aujourd'hui ou en retard
+    const lasts = lastFollowUps();
+    const due = S.data.clients.filter((c) => c.next_action_at && c.next_action_at <= todayYmd() && !['perdu', 'indesirable'].includes(c.status))
+      .sort((a, b) => a.next_action_at.localeCompare(b.next_action_at));
+    html += card('À rappeler' + (due.length ? ' <span class="count">' + due.length + '</span>' : ''), due.length ? '<div class="list">' + due.map((c) => {
+      const r = reminderLabel(c.next_action_at), last = lasts[c.id];
+      return '<div class="row"><a class="row-main" href="#/clients/' + c.id + '"><div class="row-title">' + esc(c.name) + '</div>' +
+        '<div class="row-sub"><span class="' + (r.late ? 'warn' : '') + '">' + esc(r.text.charAt(0).toUpperCase() + r.text.slice(1)) + '</span>' +
+        (c.next_action_note ? ' · ' + esc(c.next_action_note) : '') + (last ? ' · ' + esc(followUpText(last)) : '') + '</div></a>' +
+        (c.phone ? '<a class="btn btn-ghost btn-sm" href="tel:' + esc(intlPhone(c.phone, c.country)) + '" data-log="appel" data-client="' + c.id + '">' + icon('phone') + 'Appeler</a>' : '') + '</div>';
+    }).join('') + '</div>' : empty('Aucun rappel prévu aujourd\'hui.'));
+
+    // Prospects contactés restés sans réponse depuis plus de 3 jours (et sans rappel programmé)
+    const silent = S.data.clients.filter((c) => c.status === 'contacte' && !c.next_action_at && lasts[c.id] && daysSince(lasts[c.id].created_at) >= 3)
+      .sort((a, b) => lasts[a.id].created_at.localeCompare(lasts[b.id].created_at));
+    if (silent.length) {
+      html += card('Prospects sans réponse <span class="count">' + silent.length + '</span>', '<div class="list">' + silent.map((c) =>
+        '<div class="row"><a class="row-main" href="#/clients/' + c.id + '"><div class="row-title">' + esc(c.name) + '</div>' +
+        '<div class="row-sub">' + esc(followUpText(lasts[c.id])) + (c.city ? ' · ' + esc(c.city) : '') + '</div></a>' +
+        '<button class="btn btn-ghost btn-sm" data-action="sms-relance" data-client="' + c.id + '">' + icon('sms') + 'Relancer</button></div>').join('') + '</div>' +
+        '<p class="muted small pad">Contactés il y a plus de 3 jours, sans réponse ni rappel programmé.</p>');
+    }
+
     html += card('Prochains rendez-vous', upcoming.length ? '<div class="list">' + upcoming.map((a) => apptRow(a, { showDate: true })).join('') + '</div>' : empty('Rien de prévu pour le moment.'),
       '<a class="link" href="#/agenda">Agenda</a>');
 
@@ -893,6 +1117,15 @@
         FOLLOW_UPS.map(([k, label]) => '<button class="chip follow-chip" style="--c:' + ACT_TYPES[k].color + '" data-action="follow-up" data-client="' + c.id + '" data-type="' + k + '">' + esc(label) + '</button>').join('') +
         (c.status !== 'indesirable' ? '<button class="chip follow-chip spam" data-action="mark-spam" data-client="' + c.id + '">Arnaque / robot</button>' : '') + '</div>';
     }
+    if (c.next_action_at) {
+      const r = reminderLabel(c.next_action_at);
+      html += '<div class="reminder' + (r.late ? ' late' : '') + '">' + icon('clock') + '<div><b>À rappeler ' + esc(r.text) + '</b>' + (c.next_action_note ? '<span>' + esc(c.next_action_note) + '</span>' : '') + '</div>' +
+        '<button class="btn btn-ghost btn-sm" data-action="reminder" data-client="' + c.id + '">Changer</button>' +
+        '<button class="btn btn-primary btn-sm" data-action="reminder-done" data-client="' + c.id + '">Fait</button></div>';
+    } else if (!['client', 'perdu', 'indesirable'].includes(c.status)) {
+      html += '<div class="reminder-add"><button class="link" data-action="reminder" data-client="' + c.id + '">' + icon('clock') + ' Programmer un rappel</button></div>';
+    }
+    if (c.status === 'perdu' && c.lost_reason) html += '<div class="lost">Motif de perte : <b>' + esc(c.lost_reason) + '</b></div>';
 
     html += '<div class="grid-2">';
     html += card('Coordonnées', '<div class="infos">' + info('Téléphone', c.phone) + info('E-mail', c.email) + info('Adresse', fullAddress(c)) +
@@ -1029,7 +1262,40 @@
         fieldHtml({ name: 'iban', label: 'IBAN', placeholder: 'FR76 …' }, bank.iban) +
         fieldHtml({ name: 'bic', label: 'BIC' }, bank.bic) +
         '<div class="form-actions"><button class="btn btn-primary" type="submit">Enregistrer</button></div></form></section>';
-      html += card('Paiement par carte', '<div class="infos"><div class="info"><span>Prestataire</span><b>Stripe</b></div><div class="info"><span>État</span><b>' +
+      // Envoi des e-mails via un script Google (Gmail du gérant)
+      const em = S.data.settings.email || {};
+      html += '<section class="card"><header class="card-head"><h3>Envoi des e-mails</h3>' + (emailReady() ? '<span class="badge" style="--c:#1f9d55">Actif</span>' : '<span class="badge" style="--c:#8a94a3">Non réglé</span>') + '</header>' +
+        '<form class="settings-form" data-kind="email"><p class="muted small">Les e-mails partent de votre adresse Gmail, sans passer par votre messagerie. Mise en place : crm/README.md → « Envoi des e-mails ».</p>' +
+        '<label class="field"><span>Clé secrète (à coller dans le script Google)</span><div class="inline"><input name="secret" value="' + esc(em.secret || '') + '" readonly>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-action="copy-field">' + icon('copy') + '</button></div></label>' +
+        fieldHtml({ name: 'script_url', label: "URL de l'application Web Google", placeholder: 'https://script.google.com/macros/s/…/exec' }, em.script_url) +
+        '<div class="form-actions">' + (em.secret ? '' : '<button type="button" class="btn btn-ghost" data-action="gen-secret">Générer la clé</button>') +
+        (emailReady() ? '<button type="button" class="btn btn-ghost" data-action="test-email">Tester</button>' : '') +
+        '<button class="btn btn-primary" type="submit">Enregistrer</button></div></form></section>';
+
+      // Notification « nouveau prospect » (application ntfy)
+      const nt = S.data.settings.notify || {};
+      html += '<section class="card"><header class="card-head"><h3>Alerte nouveau prospect</h3>' + (nt.ntfy_topic ? '<span class="badge" style="--c:#1f9d55">Active</span>' : '<span class="badge" style="--c:#8a94a3">Non réglée</span>') + '</header>' +
+        '<form class="settings-form" data-kind="notify"><ol class="steps-list">' +
+        '<li>Installez l\'application gratuite <b>ntfy</b> (App Store / Play Store).</li>' +
+        '<li>Dans ntfy, appuyez sur <b>+</b> et abonnez-vous au sujet ci-dessous (copiez-le exactement).</li>' +
+        '<li>Cliquez sur « Envoyer un test » : la notification doit arriver sur votre téléphone.</li></ol>' +
+        '<label class="field"><span>Sujet (secret : ne le partagez pas)</span><div class="inline"><input name="ntfy_topic" value="' + esc(nt.ntfy_topic || '') + '" readonly>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-action="copy-field">' + icon('copy') + '</button></div></label>' +
+        '<p class="muted small">Par discrétion, la notification n\'indique que la ville : le nom et le téléphone restent dans le CRM.</p>' +
+        '<div class="form-actions">' + (nt.ntfy_topic ? '<button type="button" class="btn btn-ghost" data-action="test-ntfy">Envoyer un test</button>' : '<button type="button" class="btn btn-ghost" data-action="gen-topic">Générer un sujet</button>') +
+        '<button class="btn btn-primary" type="submit">Enregistrer</button></div></form></section>';
+
+      // Conditions générales de vente
+      const cgv = S.data.settings.cgv || {};
+      html += card('Conditions générales de vente', '<div class="pad">' +
+        (cgv.path ? '<p>Fichier actuel : <b>' + esc(cgv.name || 'CGV.pdf') + '</b><br><span class="muted small">Déposé le ' + esc(fmtDate(cgv.uploaded_at)) + '. Ajouté à la suite de chaque devis envoyé en signature.</span></p>'
+          : '<p class="muted">Déposez vos CGV en PDF : elles seront ajoutées à la suite du devis et signées avec lui.</p>') +
+        '<div class="btn-row" style="padding:8px 0 0"><label class="btn btn-ghost">' + (cgv.path ? 'Remplacer le PDF' : 'Déposer le PDF des CGV') + '<input type="file" accept="application/pdf" id="cgv-file" hidden></label>' +
+        (cgv.path ? '<button class="btn btn-ghost" data-action="view-cgv">Voir</button>' : '') + '</div>' +
+        '<p class="muted small">Les devis déjà signés gardent la version des CGV en vigueur au moment de la signature.</p></div>');
+
+      html += card('Paiement par carte','<div class="infos"><div class="info"><span>Prestataire</span><b>Stripe</b></div><div class="info"><span>État</span><b>' +
         (S.mode === 'demo' ? 'Simulation (mode démo)' : 'Actif si la fonction « create-checkout » est déployée') + '</b></div></div>' +
         '<p class="muted small pad">Le client paie sur une page sécurisée Stripe (carte, Apple Pay, Google Pay). L\'argent arrive sur votre compte bancaire sous quelques jours. Mise en place : voir crm/README.md.</p>');
       html += '<section class="card span-2"><header class="card-head"><h3>Modèles de SMS</h3></header><form class="settings-form" data-kind="sms">' +
@@ -1185,9 +1451,26 @@
         out.bic = out.bic.replace(/\s/g, '').toUpperCase();
         if (out.iban && !ibanValid(out.iban)) { toast('IBAN invalide : vérifiez la saisie.', true); return; }
       }
-      await guard(() => S.saveSetting({ company: 'company', bank: 'bank', sms: 'sms_templates' }[form.dataset.kind], out));
+      if (form.dataset.kind === 'email') out.script_url = out.script_url.replace(/\s/g, '');
+      if (form.dataset.kind === 'email' && out.script_url && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(out.script_url)) {
+        toast("L'URL doit ressembler à https://script.google.com/macros/s/…/exec", true); return;
+      }
+      if (form.dataset.kind === 'notify') out.ntfy_topic = out.ntfy_topic.replace(/[^\w-]/g, '');
+      await guard(() => S.saveSetting({ company: 'company', bank: 'bank', sms: 'sms_templates', email: 'email', notify: 'notify' }[form.dataset.kind], out));
       toast('Réglages enregistrés');
+      render();
     }));
+
+    const cgvInput = $('#cgv-file');
+    if (cgvInput) cgvInput.addEventListener('change', async () => {
+      const file = cgvInput.files[0];
+      if (!file) return;
+      await guard(async () => {
+        const path = await S.uploadCgv(file);
+        await S.saveSetting('cgv', { path, name: file.name, uploaded_at: new Date().toISOString() });
+      });
+      toast('CGV enregistrées'); render();
+    });
 
     // Glisser-déposer du pipeline
     let dragId = null;
@@ -1291,8 +1574,55 @@
         // Un premier contact tenté fait passer le nouveau prospect en « Contacté ».
         if (c.status === 'nouveau') await setClientStatus(c, 'contacte');
       });
-      toast(label + ' — noté');
       render();
+      // Pas joint : on propose tout de suite de programmer le prochain rappel.
+      if (type === 'joint') toast(label + ' — noté');
+      else askReminder(client(c.id), label + ' — noté. Quand le recontacter ?');
+    },
+    'copy-field': (el) => {
+      const input = el.parentNode.querySelector('input');
+      if (!input.value) { toast('Rien à copier pour le moment.', true); return; }
+      navigator.clipboard.writeText(input.value).then(() => toast('Copié'), () => toast('Copie impossible', true));
+    },
+    'gen-secret': async () => {
+      const secret = Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, '0')).join('');
+      await guard(() => S.saveSetting('email', Object.assign({}, emailCfg(), { secret })));
+      toast('Clé générée'); render();
+    },
+    'test-email': async (el) => {
+      el.disabled = true;
+      try {
+        const r = await guard(() => callMailScript({ test: true }));
+        toast('Connexion OK : envoi depuis ' + (r.from || 'votre Gmail') + ' (' + r.quota + ' e-mails restants aujourd’hui)');
+      } catch (e) { /* message déjà affiché */ }
+      el.disabled = false;
+    },
+    'gen-topic': async () => {
+      const topic = 'alpes-crm-' + Array.from(crypto.getRandomValues(new Uint8Array(9))).map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 16);
+      await guard(() => S.saveSetting('notify', { ntfy_topic: topic }));
+      toast('Sujet généré : abonnez-vous-y dans ntfy'); render();
+    },
+    'test-ntfy': async () => {
+      const topic = (S.data.settings.notify || {}).ntfy_topic;
+      try {
+        const r = await fetch('https://ntfy.sh', { method: 'POST', body: JSON.stringify({ topic, title: 'Test CRM Alpes Désembouage', message: 'Les alertes « nouveau prospect » fonctionnent.', tags: ['white_check_mark'] }) });
+        if (!r.ok) throw new Error();
+        toast('Notification envoyée : vérifiez votre téléphone');
+      } catch (e) { toast("Envoi de la notification impossible.", true); }
+    },
+    'view-cgv': async () => {
+      const bytes = await guard(() => S.getQuotePdf(S.data.settings.cgv.path));
+      window.open(URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), '_blank');
+    },
+    'sms-relance': (el) => smsSheet(client(el.dataset.client), {}, 'relance_prospect'),
+    'email': (el) => emailSheet(client(el.dataset.client), { subject: company().name }),
+    'reminder': (el) => askReminder(client(el.dataset.client)),
+    'reminder-done': async (el) => {
+      const c = client(el.dataset.client);
+      await guard(() => S.update('clients', c.id, { next_action_at: null, next_action_note: '' }));
+      toast('Rappel terminé');
+      render();
+      if (!['client', 'perdu', 'indesirable'].includes(c.status)) askReminder(client(c.id), 'Prévoir un prochain rappel ?');
     },
     'mark-spam': async (el) => {
       if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : arnaque / robot ?'; return; }
@@ -1331,8 +1661,8 @@
   document.addEventListener('change', async (e) => {
     const el = e.target;
     if (el.dataset.action === 'client-status') {
-      await guard(() => setClientStatus(client(el.dataset.client), el.value));
-      toast('Statut mis à jour');
+      const ok = await guard(() => setClientStatus(client(el.dataset.client), el.value));
+      if (ok) toast('Statut mis à jour');
       render();
     } else if (el.dataset.action === 'agenda-tech') {
       location.hash = '#/agenda?w=' + el.dataset.week + (el.value ? '&t=' + el.value : '');

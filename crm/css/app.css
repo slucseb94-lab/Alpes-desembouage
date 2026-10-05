@@ -346,3 +346,24 @@ dialog#modal::backdrop { background: rgba(13, 30, 50, 0.45); }
 .follow-chip.spam { --c: #b3261e; margin-left: auto; }
 @media (max-width: 599px) { .follow-chip.spam { margin-left: 0; } }
 .last-act { color: color-mix(in srgb, var(--c) 85%, black); font-weight: 600; }
+
+/* ------------------------------------------------------------ rappels, motif de perte, doublons, réglages */
+.reminder { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin: -6px 0 16px; border-radius: 10px; background: var(--blue-50); color: var(--blue-900); }
+.reminder > div { flex: 1; min-width: 160px; display: flex; flex-direction: column; }
+.reminder span { font-size: 13px; color: var(--muted); }
+.reminder.late { background: #fdf3f2; color: var(--danger); }
+.reminder-add { margin: -8px 0 14px; }
+.reminder-add .link { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 4px 0; font-size: 13px; }
+.reminder-add .ico { width: 16px; height: 16px; }
+.remind-custom { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.lost { margin: -6px 0 16px; padding: 8px 12px; border-radius: 10px; background: #f1f3f6; font-size: 14px; color: var(--muted); }
+.lost b { color: var(--text); }
+.count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--orange-500); color: #fff; font-size: 12px; font-family: var(--font-body); margin-left: 4px; vertical-align: 2px; }
+.dup-warn { grid-column: 1 / -1; padding: 10px 12px; border-radius: 10px; background: #fff4ec; color: #8a3a0c; font-size: 14px; }
+.dup-warn a { color: inherit; text-decoration: underline; }
+.inline { display: flex; gap: 6px; }
+.inline input { flex: 1; min-width: 0; }
+.steps-list { padding-left: 20px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.check-line { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.check-line input { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0; }
+.center-line { justify-content: center; margin: 4px 0 6px; }

@@ -147,14 +147,15 @@
 
     main.innerHTML =
       '<section class="intro"><h1>Votre devis' + (info.reference ? ' n° ' + esc(info.reference) : '') + '</h1>' +
-      '<p>Bonjour ' + esc(info.client_name) + ', voici votre devis' + (info.amount ? ' d\'un montant de <b>' + esc(money(info.amount)) + ' TTC</b>' : '') + '. ' +
-      'Prenez le temps de le lire, puis signez-le en bas de page.</p></section>' +
+      '<p>Bonjour ' + esc(info.client_name) + ', voici votre devis' + (info.amount ? ' d\'un montant de <b>' + esc(money(info.amount)) + ' TTC</b>' : '') +
+      (info.with_cgv ? ', suivi de nos <b>conditions générales de vente</b>' : '') + '. ' +
+      'Prenez le temps de ' + (info.with_cgv ? 'les' : 'le') + ' lire, puis signez en bas de page.</p></section>' +
       '<section class="doc" id="doc"><p class="loading">Affichage du devis…</p></section>' +
       '<p class="center"><button class="link" id="dl-orig">Télécharger le devis (PDF)</button></p>' +
       '<form class="card sign" id="sign-form">' +
       '<h2>Signature</h2>' +
       '<label class="field"><span>Nom et prénom du signataire</span><input name="name" required autocomplete="name" value="' + esc(info.client_name || '') + '"></label>' +
-      '<label class="check-line"><input type="checkbox" name="consent" required><span>J\'ai lu le devis et je l\'accepte sans réserve. <b>Bon pour accord.</b></span></label>' +
+      '<label class="check-line"><input type="checkbox" name="consent" required><span>' + (info.with_cgv ? 'J\'ai lu le devis et les conditions générales de vente, et je les accepte sans réserve.' : 'J\'ai lu le devis et je l\'accepte sans réserve.') + ' <b>Bon pour accord.</b></span></label>' +
       '<div class="pad-head"><span>Signez avec votre doigt dans le cadre</span><button type="button" class="link" id="clear">Effacer</button></div>' +
       '<canvas class="pad" id="pad"></canvas>' +
       '<p class="error" id="err" hidden></p>' +

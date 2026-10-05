@@ -210,17 +210,52 @@
     const doc_hash = await window.SignedPdf.sha256Hex(bytes);
     const sign_token = quote.sign_token || newId();
     const path = sign_token + '/devis.pdf';
+    await this.putFile(path, bytes);
+    return this.update('quotes', quote.id, { pdf_path: path, doc_hash, sign_token, sign_status: 'aucune', sign_sent_at: null, sign_expires_at: null, with_cgv: false });
+  };
+
+  // Enregistre un PDF dans le stockage privé « devis ».
+  Store.putFile = async function (path, bytes) {
     if (this.mode === 'demo') {
-      if (file.size > 1.5 * 1024 * 1024) throw new Error('En mode démo, PDF limité à 1,5 Mo (stockage du navigateur).');
-      const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      if (bytes.byteLength > 1.5 * 1024 * 1024) throw new Error('En mode démo, PDF limité à 1,5 Mo (stockage du navigateur).');
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
       demoDb.files = demoDb.files || {};
       demoDb.files[path] = dataUrl;
       demoSave();
-    } else {
-      const { error } = await this.sb.storage.from('devis').upload(path, file, { upsert: true, contentType: 'application/pdf' });
-      if (error) throw new Error('Envoi du PDF impossible : ' + error.message);
+      return;
     }
-    return this.update('quotes', quote.id, { pdf_path: path, doc_hash, sign_token, sign_status: 'aucune', sign_sent_at: null, sign_expires_at: null });
+    const { error } = await this.sb.storage.from('devis').upload(path, new Blob([bytes], { type: 'application/pdf' }), { upsert: true, contentType: 'application/pdf' });
+    if (error) throw new Error('Envoi du PDF impossible : ' + error.message);
+  };
+
+  Store.uploadCgv = async function (file) {
+    if (file.type && file.type !== 'application/pdf') throw new Error('Le fichier doit être un PDF.');
+    const bytes = await file.arrayBuffer();
+    await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true }); // vérifie que le PDF est lisible
+    const path = 'cgv/cgv-' + Date.now() + '.pdf';
+    await this.putFile(path, bytes);
+    return path;
+  };
+
+  // Prépare le document que le client va signer : le devis seul, ou le devis suivi des CGV (fusionnés en un PDF).
+  Store.prepareSignaturePdf = async function (quote, cgvPath) {
+    const original = quote.sign_token + '/devis.pdf';
+    let bytes = await this.getQuotePdf(original);
+    let path = original;
+    if (cgvPath) {
+      const { PDFDocument } = window.PDFLib;
+      const out = await PDFDocument.create();
+      for (const src of [bytes, await this.getQuotePdf(cgvPath)]) {
+        const doc = await PDFDocument.load(src, { ignoreEncryption: true });
+        (await out.copyPages(doc, doc.getPageIndices())).forEach((p) => out.addPage(p));
+      }
+      bytes = await out.save();
+      path = quote.sign_token + '/a-signer.pdf';
+      await this.putFile(path, bytes);
+    }
+    const doc_hash = await window.SignedPdf.sha256Hex(bytes);
+    return this.update('quotes', quote.id, { pdf_path: path, doc_hash, with_cgv: !!cgvPath });
   };
 
   Store.getQuotePdf = async function (path) {

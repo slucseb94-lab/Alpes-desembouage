@@ -1,6 +1,6 @@
 // Service worker : permet l'installation sur téléphone et l'ouverture rapide de l'application.
 // Les données (Supabase) passent toujours par le réseau ; seuls les fichiers de l'application sont mis en cache.
-const CACHE = 'crm-v4';
+const CACHE = 'crm-v5';
 const ASSETS = ['./', 'index.html', 'css/app.css', 'js/config.js', 'js/store.js', 'js/app.js', 'icons/icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

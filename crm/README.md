@@ -92,6 +92,29 @@ Pré-requis : le mode réel Supabase ci-dessus.
 
 **La clé secrète Stripe ne doit jamais être mise dans `js/config.js` ni dans le site** : elle reste dans les secrets Supabase.
 
+## Envoi des e-mails depuis votre Gmail
+
+Les e-mails (devis à signer, liens de paiement, messages libres) partent directement de **votre adresse Gmail**,
+sans ouvrir votre messagerie. Cela passe par un petit script Google installé dans votre propre compte.
+
+1. CRM → **Réglages → Envoi des e-mails** → **Générer la clé**, puis copier la clé.
+2. Aller sur https://script.google.com (connecté avec le compte Gmail d'envoi) → **Nouveau projet**.
+3. Effacer le contenu, coller tout le fichier `google-apps-script/envoi-mail.gs`,
+   puis remplacer `COLLER_ICI_LA_CLE` par la clé copiée. Enregistrer (icône disquette).
+4. **Déployer → Nouveau déploiement** → roue crantée → **Application Web** :
+   - Exécuter en tant que : **Moi**
+   - Qui peut accéder : **Tout le monde**
+   → **Déployer** → **Autoriser l'accès** (Google affiche « application non validée » : *Paramètres avancés → Accéder au projet*, c'est votre propre script).
+5. Copier l'**URL de l'application Web** (`https://script.google.com/macros/s/…/exec`), la coller dans le CRM → **Enregistrer** → **Tester**.
+
+Limite Google : 100 destinataires par jour avec un compte Gmail gratuit.
+
+## Alerte « nouveau prospect » sur le téléphone
+
+CRM → **Réglages → Alerte nouveau prospect** → **Générer un sujet**, installer l'application gratuite **ntfy**,
+s'abonner au sujet (bouton **+**), puis **Envoyer un test**. Chaque demande du formulaire du site déclenche
+ensuite une notification (avec seulement la ville, par discrétion).
+
 ## Installer sur le téléphone
 
 - **iPhone** : ouvrir l'adresse du CRM dans **Safari** → bouton Partager → « Sur l'écran d'accueil ».

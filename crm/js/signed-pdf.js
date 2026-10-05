@@ -54,7 +54,7 @@
     y -= 34;
 
     const rows = [
-      ['Document', 'Devis ' + (info.reference || '(sans numéro)')],
+      ['Document', 'Devis ' + (info.reference || '(sans numéro)') + (info.with_cgv ? ' + conditions générales de vente' : '')],
       ['Montant', info.amount != null && info.amount !== '' ? Number(info.amount).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) + ' TTC' : '-'],
       ['Client', info.client_name || ''],
       ['Signé par', info.signer_name],
@@ -73,7 +73,10 @@
     y -= 10;
     text('Mention acceptée par le signataire :', { size: 9, font: bold, color: gray });
     y -= 15;
-    wrap(safe('« J\'ai lu le devis ci-joint et je l\'accepte sans réserve. Bon pour accord. »'), font, 10, W - M * 2).forEach((ln) => { text(ln); y -= 13; });
+    const mention = info.with_cgv
+      ? '« J\'ai lu le devis et les conditions générales de vente ci-joints, et je les accepte sans réserve. Bon pour accord. »'
+      : '« J\'ai lu le devis ci-joint et je l\'accepte sans réserve. Bon pour accord. »';
+    wrap(safe(mention), font, 10, W - M * 2).forEach((ln) => { text(ln); y -= 13; });
 
     y -= 18;
     text('Signature :', { size: 9, font: bold, color: gray });
