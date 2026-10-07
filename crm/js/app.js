@@ -934,7 +934,7 @@
 
   function clientRow(c, last) {
     const sub = [c.city, c.phone].filter(Boolean).join(' · ');
-    const action = last === undefined ? lastFollowUps()[c.id] : last;
+    const action = last === undefined ? lastFollowUps()[c.id] : (last && ACT_TYPES[last.type] ? last : null);
     const never = !action && ['nouveau', 'contacte'].includes(c.status);
     return '<a class="row" href="#/clients/' + c.id + '"><div class="avatar" style="--c:' + STATUS[c.status].color + '">' + esc(c.name.trim().charAt(0).toUpperCase()) + '</div>' +
       '<div class="row-main"><div class="row-title">' + esc(c.name) + '</div><div class="row-sub">' + esc(sub) +
@@ -1032,7 +1032,7 @@
         (!due.length && !doneNoPay.length ? empty('Tout est encaissé.') : ''));
 
       const recent = S.data.clients.filter((c) => c.status === 'nouveau').sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
-      html += card('Nouveaux prospects', recent.length ? '<div class="list">' + recent.map(clientRow).join('') + '</div>' : empty('Aucun nouveau prospect.'),
+      html += card('Nouveaux prospects', recent.length ? '<div class="list">' + recent.map((c) => clientRow(c)).join('') + '</div>' : empty('Aucun nouveau prospect.'),
         '<button class="btn btn-ghost btn-sm" data-action="new-client">' + icon('plus') + 'Prospect</button>');
     }
     html += '</div>';
@@ -1322,15 +1322,20 @@
     const { parts, params } = currentRoute();
     const section = parts[0] || '';
     let html;
-    if (section === 'agenda') html = viewAgenda(params);
-    else if (section === 'clients' && parts[1]) html = viewClient(parts[1]);
-    else if (section === 'clients') html = viewClients(params);
-    else if (section === 'pipeline' && S.isAdmin()) html = viewPipeline();
-    else if (section === 'rdv' && parts[1]) html = viewAppointment(parts[1]);
-    else if (section === 'equipe') html = viewTeam();
-    else if (section === 'demo-paiement' && parts[1] && S.mode === 'demo') html = viewDemoCheckout(parts[1]);
-    else if (section === 'reglages') html = viewSettings();
-    else html = viewDashboard();
+    try {
+      if (section === 'agenda') html = viewAgenda(params);
+      else if (section === 'clients' && parts[1]) html = viewClient(parts[1]);
+      else if (section === 'clients') html = viewClients(params);
+      else if (section === 'pipeline' && S.isAdmin()) html = viewPipeline();
+      else if (section === 'rdv' && parts[1]) html = viewAppointment(parts[1]);
+      else if (section === 'equipe') html = viewTeam();
+      else if (section === 'demo-paiement' && parts[1] && S.mode === 'demo') html = viewDemoCheckout(parts[1]);
+      else if (section === 'reglages') html = viewSettings();
+      else html = viewDashboard();
+    } catch (e) {
+      console.error(e);
+      html = pageHead('Oups', '') + '<section class="card"><p class="pad">Cet écran n’a pas pu s’afficher (' + esc(e.message) + '). Les autres écrans restent utilisables.</p><p class="pad"><a class="link" href="#/">Retour à l’accueil</a></p></section>';
+    }
     const scroll = window.scrollY;
     const sameRoute = view().dataset.route === location.hash;
     view().innerHTML = html;
