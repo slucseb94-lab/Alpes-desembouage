@@ -22,6 +22,7 @@
     annule: { label: 'Annulé', color: '#b3261e' }
   };
   const QUOTE_STATUS = {
+    brouillon: { label: 'Brouillon', color: '#5a6472' },
     envoye: { label: 'En attente', color: '#e0691f' },
     accepte: { label: 'Accepté', color: '#1f9d55' },
     refuse: { label: 'Refusé', color: '#8a94a3' }
@@ -61,7 +62,39 @@
     virement: { label: 'Coordonnées pour virement', text: 'Bonjour {nom}, pour régler {montant} par virement : IBAN {iban} – BIC {bic} – titulaire {titulaire}. Merci d\'indiquer la référence {ref_paiement} dans le libellé. {entreprise}' }
   };
   const PAYMENT_TEMPLATES = ['paiement', 'virement'];
-  const DEFAULT_COMPANY = { name: 'Alpes Désembouage', review_link: 'https://maps.app.goo.gl/sVYWGCqHb2V59HXk9' };
+  const DEFAULT_COMPANY = {
+    name: 'Alpes Désembouage', review_link: 'https://maps.app.goo.gl/sVYWGCqHb2V59HXk9',
+    // Mentions des devis (modifiables dans Réglages → Mentions des devis)
+    legal_name: 'Duck Compagny', trade_name: 'Alpes désembouage - STI plomberie',
+    address: '875 route départementale 201 B\n73460 Montailleur', phone: '06 58 65 80 56', email: 'alpesdesembouage@gmail.com',
+    legal_form: 'SASU', capital: '100 €', siege: '1128 route de Vizeron, 73200 Gilly-sur-Isère',
+    siret: '899 390 447 00014', rcs: 'RCS Chambéry 899 390 447', tva_number: 'FR50 899 390 447',
+    insurance: 'MAAF n° 173145620 M - MCE - 001', iban: 'FR76 1680 7000 0237 7727 8321 609',
+    payment_terms: 'Paiement en espèces, par chèque ou par virement bancaire.',
+    validity_days: 30, vat_rate: 10,
+    vat_mention: 'Je certifie que les travaux réalisés sont éligibles au taux de TVA réduit de 5,5 % ou 10 % et respectent les conditions prévues par les articles 279-0 bis et 278-0 bis A du Code Général des Impôts.',
+    extra_mention: 'Le montant peut être révisé en fonction de l’ajustement des fournitures et/ou de leurs prix.'
+  };
+
+  // Catalogue des prestations (prix TTC), modifiable dans Réglages → Catalogue.
+  const DESC_RAD = 'Désembouage complet des réseaux de chauffage par radiateurs. Nettoyage mécanique par mélange d’eau et d’air sous pression à l’aide de la centrale de désembouage Virafal. Nettoyage du circuit complet ainsi que de chaque radiateur. Injection de l\'inhibiteur Sentinel X100 protection contre les boues.';
+  const DESC_SOL = 'Désembouage complet des réseaux de chauffage au sol. Nettoyage mécanique par mélange d’eau et d’air sous pression à l’aide de la centrale de désembouage Virafal. Nettoyage du circuit complet ainsi que de chaque boucle du plancher chauffant. Injection de l\'inhibiteur Sentinel X100 protection contre les boues.';
+  const DESC_MIX = 'Désembouage complet des réseaux de chauffage par radiateurs/boucles. Nettoyage mécanique par mélange d’eau et d’air sous pression à l’aide de la centrale de désembouage Virafal. Nettoyage du circuit complet ainsi que de chaque radiateur/boucle. Injection de l\'inhibiteur Sentinel X100 protection contre les boues.';
+  const DEFAULT_CATALOG = [
+    { id: 'rad', label: 'Forfait désembouage circuit chauffage inclus 5 radiateurs', description: DESC_RAD, unit: 'forfait', price_ttc: 590 },
+    { id: 'rad-sup', label: 'Radiateurs supplémentaires', description: '', unit: 'u', price_ttc: 50 },
+    { id: 'sol', label: 'Forfait désembouage du circuit de chauffage au sol inclus 5 boucles', description: DESC_SOL, unit: 'forfait', price_ttc: 590 },
+    { id: 'sol-sup', label: 'Boucles supplémentaires', description: '', unit: 'u', price_ttc: 50 },
+    { id: 'mix', label: 'Forfait désembouage circuit chauffage inclus 5 radiateurs/boucles de plancher chauffant', description: DESC_MIX, unit: 'forfait', price_ttc: 590 },
+    { id: 'mix-sup', label: 'Radiateurs et boucles supplémentaires', description: '', unit: 'u', price_ttc: 50 }
+  ];
+  // Les 3 types de devis : forfait (5 inclus) + éléments supplémentaires
+  const QUOTE_KINDS = {
+    radiateurs: { label: 'Radiateurs', title: 'Désembouage Radiateurs', base: 'rad', extra: 'rad-sup', counted: 'radiateurs' },
+    plancher: { label: 'Plancher chauffant', title: 'Désembouage plancher chauffant', base: 'sol', extra: 'sol-sup', counted: 'boucles' },
+    mixte: { label: 'Radiateurs + plancher', title: 'Désembouage circuit chauffage', base: 'mix', extra: 'mix-sup', counted: 'radiateurs et boucles' }
+  };
+  const INCLUDED = 5;
 
   // ================================================================ utilitaires
   const $ = (sel, el) => (el || document).querySelector(sel);
@@ -524,15 +557,18 @@
   }
 
   function editQuote(q, clientId) {
+    // Devis créé dans le CRM : seuls le statut, la date d'envoi et les notes se modifient ici (le contenu passe par l'éditeur).
+    const crm = !!(q && Array.isArray(q.lines));
     openForm({
-      title: q ? 'Modifier le devis' : 'Ajouter un devis',
-      fields: [
-        { name: 'reference', label: 'N° de devis (Tolteck)', half: true, placeholder: 'D-2026-0001' },
-        { name: 'amount', label: 'Montant TTC (€)', type: 'number', step: '0.01', half: true, inputmode: 'decimal' },
+      title: q ? (crm ? 'Statut du devis ' + q.reference : 'Modifier le devis') : 'Importer un devis (PDF)',
+      fields: (crm ? [] : [
+        { name: 'reference', label: 'N° de devis', half: true, placeholder: 'DEV-2026/10-0001' },
+        { name: 'amount', label: 'Montant TTC (€)', type: 'number', step: '0.01', half: true, inputmode: 'decimal' }
+      ]).concat([
         { name: 'sent_date', label: "Date d'envoi", type: 'date', half: true },
         { name: 'status', label: 'Statut', type: 'select', options: Object.fromEntries(Object.entries(QUOTE_STATUS).map(([k, v]) => [k, v.label])), half: true },
         { name: 'notes', label: 'Notes', type: 'textarea', rows: 2 }
-      ].concat(q && q.sign_status === 'signe' ? [] : [{
+      ]).concat(crm || (q && q.sign_status === 'signe') ? [] : [{
         name: 'pdf', label: q && q.pdf_path ? 'Remplacer le PDF du devis' : 'PDF du devis (export Tolteck)', type: 'file', accept: 'application/pdf',
         hint: 'Nécessaire pour la signature électronique par le client.'
       }]),
@@ -592,6 +628,9 @@
     if (q.sign_status === 'signe') {
       body += '<div class="pay-done">✓ Signé par ' + esc(q.signer_name) + ' le ' + esc(fmt(q.signed_at, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</div>' +
         '<div class="pay-actions"><button class="btn btn-primary" data-q="signed">Télécharger le devis signé (PDF)</button></div>';
+    } else if (!q.pdf_path && Array.isArray(q.lines)) {
+      body += '<p class="muted center">Brouillon : vérifiez le contenu puis validez-le pour l\'envoyer au client.</p>' +
+        '<div class="pay-actions"><button class="btn btn-primary btn-lg" data-q="content">Ouvrir le brouillon</button></div>';
     } else if (!q.pdf_path) {
       body += '<p class="muted center">Ajoutez le PDF du devis (export Tolteck) pour pouvoir le faire signer en ligne.</p>' +
         '<div class="pay-actions"><button class="btn btn-primary" data-q="edit">Ajouter le PDF</button></div>';
@@ -614,12 +653,16 @@
           '<a class="btn btn-ghost" href="' + esc(url) + '" target="_blank" rel="noopener">Voir la page client</a></div>' +
           '<div class="pay-status"><span class="dot"></span>En attente de signature…</div>');
     }
-    body += '<div class="pay-admin">' + (q.pdf_path ? '<button class="btn btn-ghost btn-sm" data-q="pdf">Voir le PDF d\'origine</button>' : '') +
-      '<button class="btn btn-ghost btn-sm" data-q="edit">' + icon('edit') + 'Modifier le devis</button></div>';
+    const crm = Array.isArray(q.lines);
+    body += '<div class="pay-admin">' + (q.pdf_path ? '<button class="btn btn-ghost btn-sm" data-q="pdf">Voir le PDF</button>' : '') +
+      (q.pdf_path ? '<button class="btn btn-ghost btn-sm" data-action="q-download" data-quote="' + q.id + '">Télécharger</button>' : '') +
+      (crm && q.sign_status !== 'signe' ? '<button class="btn btn-ghost btn-sm" data-q="content">' + icon('edit') + 'Modifier le contenu</button>' : '') +
+      '<button class="btn btn-ghost btn-sm" data-q="edit">' + (crm ? 'Statut et notes' : icon('edit') + 'Modifier le devis') + '</button></div>';
 
     openSheet('Devis', body, (root) => {
       const on = (k, fn) => root.querySelectorAll('[data-q=' + k + ']').forEach((b) => b.addEventListener('click', fn));
       on('edit', () => { closeModal(); editQuote(q); });
+      on('content', () => { closeModal(); editor = null; location.hash = '#/devis/' + q.id; });
       on('pdf', () => guard(() => openQuotePdf(q)));
       on('signed', (e) => { e.target.disabled = true; guard(() => downloadSignedQuote(q)).finally(() => { e.target.disabled = false; }); });
       on('copy', () => navigator.clipboard.writeText(signUrl(q)).then(() => toast('Lien copié'), () => toast('Copie impossible', true)));
@@ -641,7 +684,7 @@
         try {
           row = await guard(async () => {
             await S.prepareSignaturePdf(q, withCgv ? S.data.settings.cgv.path : null);
-            return S.update('quotes', q.id, { sign_status: 'envoye', sign_sent_at: now.toISOString(), sign_expires_at: addDays(now, 30).toISOString(), status: 'envoye' });
+            return S.update('quotes', q.id, { sign_status: 'envoye', sign_sent_at: now.toISOString(), sign_expires_at: addDays(now, 30).toISOString(), status: 'envoye', sent_date: q.sent_date || ymd(now) });
           });
         } catch (e) { btn.disabled = false; btn.textContent = 'Envoyer pour signature'; return; }
         await logActivity(q.client_id, 'note', 'Devis ' + (q.reference || '') + ' envoyé pour signature électronique');
@@ -689,6 +732,188 @@
       }));
     });
   }
+
+  // ================================================================ création des devis
+  const catalog = () => (Array.isArray(S.data.settings.catalog) && S.data.settings.catalog.length ? S.data.settings.catalog : DEFAULT_CATALOG);
+  const catalogItem = (id) => catalog().find((x) => x.id === id);
+  const lineFrom = (item, qty) => ({ label: item.label, description: item.description || '', unit: item.unit || 'u', qty, price_ttc: Number(item.price_ttc) || 0 });
+  const kindFromClient = (c) => (c.emitter_type === 'Plancher chauffant' ? 'plancher' : c.emitter_type === 'Mixte' ? 'mixte' : 'radiateurs');
+
+  // Forfait (5 inclus) + éléments supplémentaires au-delà de 5
+  function linesFor(kind, count) {
+    const k = QUOTE_KINDS[kind], base = catalogItem(k.base), extra = catalogItem(k.extra);
+    const lines = [];
+    if (base) lines.push(lineFrom(base, 1));
+    const more = Math.max(0, (Number(count) || 0) - INCLUDED);
+    if (more && extra) lines.push(lineFrom(extra, more));
+    return lines;
+  }
+
+  function editCatalogItem(item) {
+    const list = catalog().slice();
+    openForm({
+      title: item ? 'Modifier la prestation' : 'Nouvelle prestation',
+      fields: [
+        { name: 'label', label: 'Désignation', required: true },
+        { name: 'description', label: 'Description (imprimée sous la désignation)', type: 'textarea', rows: 4 },
+        { name: 'unit', label: 'Unité', half: true, placeholder: 'u, forfait, m², h…' },
+        { name: 'price_ttc', label: 'Prix TTC (€)', type: 'number', step: '0.01', required: true, half: true, inputmode: 'decimal' }
+      ],
+      values: item || { unit: 'u' },
+      onSubmit: async (v) => {
+        const row = Object.assign({}, item || { id: 'p-' + Date.now().toString(36) }, v, { price_ttc: Number(v.price_ttc) || 0, unit: v.unit || 'u' });
+        const i = list.findIndex((x) => x.id === row.id);
+        if (i >= 0) list[i] = row; else list.push(row);
+        await S.saveSetting('catalog', list);
+        toast('Catalogue enregistré');
+      },
+      // Les forfaits utilisés par le remplissage rapide ne se suppriment pas (on peut les modifier)
+      onDelete: item && !/^(rad|sol|mix)(-sup)?$/.test(item.id) ? async () => { await S.saveSetting('catalog', list.filter((x) => x.id !== item.id)); toast('Prestation supprimée'); } : null
+    });
+  }
+
+  const clientAddress = (c) => [c.address, [c.postal_code, c.city].filter(Boolean).join(' ')].filter(Boolean).join('\n');
+
+  // Brouillon en cours d'édition (conservé tant qu'on reste sur l'écran du devis)
+  let editor = null;
+
+  function startEditor(key, q, c) {
+    const co = company();
+    const today = new Date();
+    if (q) {
+      editor = { key, id: q.id, clientId: q.client_id, kind: null, count: c.radiators_count || INCLUDED,
+        q: { reference: q.reference, title: q.title || '', project_address: q.project_address || clientAddress(c), issue_date: q.issue_date || ymd(today),
+          valid_until: q.valid_until || ymd(addDays(today, co.validity_days || 30)), notes: q.notes || '', lines: JSON.parse(JSON.stringify(q.lines || [])) } };
+    } else {
+      const kind = kindFromClient(c), count = c.radiators_count || INCLUDED;
+      editor = { key, id: null, clientId: c.id, kind, count,
+        q: { reference: '', title: QUOTE_KINDS[kind].title, project_address: clientAddress(c), issue_date: ymd(today),
+          valid_until: ymd(addDays(today, Number(co.validity_days) || 30)), notes: '', lines: linesFor(kind, count) } };
+    }
+  }
+
+  function editorTotalsHtml() {
+    const t = QuotePdf.computeTotals(editor.q.lines, company().vat_rate);
+    return '<div class="qt-row"><span>Total HT</span><b>' + esc(fmtMoney2(t.ht)) + '</b></div>' +
+      '<div class="qt-row"><span>TVA à ' + t.rate + ' %</span><b>' + esc(fmtMoney2(t.tva)) + '</b></div>' +
+      '<div class="qt-row qt-ttc"><span>Total TTC</span><b>' + esc(fmtMoney2(t.ttc)) + '</b></div>';
+  }
+
+  function lineHtml(l, i) {
+    const t = QuotePdf.computeTotals([l], company().vat_rate).rows[0];
+    return '<div class="qline" data-i="' + i + '">' +
+      '<div class="qline-head"><span class="qline-n">' + (i + 1) + '</span>' +
+      '<input class="qline-label" data-f="label" value="' + esc(l.label) + '" placeholder="Désignation">' +
+      '<button type="button" class="icon-btn sm" data-action="q-del-line" data-i="' + i + '" aria-label="Supprimer la ligne">✕</button></div>' +
+      '<textarea data-f="description" rows="' + (l.description ? 3 : 1) + '" placeholder="Description (facultatif)">' + esc(l.description) + '</textarea>' +
+      '<div class="qline-nums">' +
+      '<label><span>Qté</span><input data-f="qty" type="number" step="0.01" min="0" inputmode="decimal" value="' + esc(l.qty) + '"></label>' +
+      '<label><span>Unité</span><input data-f="unit" value="' + esc(l.unit) + '"></label>' +
+      '<label><span>Prix TTC</span><input data-f="price_ttc" type="number" step="0.01" min="0" inputmode="decimal" value="' + esc(l.price_ttc) + '"></label>' +
+      '<div class="qline-tot"><span>PU HT ' + esc(fmtMoney2(t.pu_ht)) + '</span><b data-tot>' + esc(fmtMoney2(t.total_ttc)) + ' TTC</b></div></div></div>';
+  }
+
+  function viewQuoteEditor(id, params) {
+    if (!S.isAdmin()) return pageHead('Devis') + empty('Réservé au gérant.');
+    const q = id ? S.data.quotes.find((x) => x.id === id) : null;
+    const c = client(q ? q.client_id : params.get('client'));
+    if (!c) return pageHead('Devis introuvable', '', '', '#/clients') + empty("Ce devis ou ce client n'existe pas.");
+    if (q && q.sign_status === 'signe') return pageHead('Devis ' + esc(q.reference), 'Signé : il ne peut plus être modifié.', '', '#/clients/' + c.id) + empty('Un devis signé ne se modifie plus. Créez un nouveau devis si besoin.');
+    const key = id || 'new:' + c.id;
+    if (!editor || editor.key !== key) startEditor(key, q, c);
+    const e = editor.q;
+
+    let html = pageHead(q ? 'Devis ' + esc(e.reference) : 'Nouveau devis', esc(c.name), '', '#/clients/' + c.id);
+    if (q && q.sign_status === 'envoye') html += '<p class="dup-warn" style="margin-bottom:14px">Ce devis a déjà été envoyé au client pour signature. Si vous le modifiez, il faudra lui renvoyer le lien.</p>';
+
+    html += '<div class="grid-2">';
+    // Générateur rapide
+    html += card('Remplissage rapide', '<div class="pad qgen">' +
+      '<div class="seg-btns">' + Object.entries(QUOTE_KINDS).map(([k, v]) => '<button type="button" class="chip' + (editor.kind === k ? ' on' : '') + '" data-action="q-kind" data-kind="' + k + '">' + esc(v.label) + '</button>').join('') + '</div>' +
+      '<label class="field"><span>Nombre de ' + esc(editor.kind ? QUOTE_KINDS[editor.kind].counted : 'radiateurs / boucles') + ' (forfait : ' + INCLUDED + ' inclus)</span>' +
+      '<input id="q-count" type="number" min="1" inputmode="numeric" value="' + esc(editor.count) + '"></label>' +
+      '<button type="button" class="btn btn-primary" data-action="q-generate">Remplir les lignes</button>' +
+      '<p class="muted small">Remplace les lignes du devis par le forfait et les éléments supplémentaires.</p></div>');
+
+    // Infos générales
+    html += card('Informations', '<div class="pad form-grid">' +
+      '<label class="field"><span>Titre</span><input data-q="title" value="' + esc(e.title) + '"></label>' +
+      '<label class="field half"><span>Date</span><input type="date" data-q="issue_date" value="' + esc(e.issue_date) + '"></label>' +
+      '<label class="field half"><span>Valable jusqu\'au</span><input type="date" data-q="valid_until" value="' + esc(e.valid_until) + '"></label>' +
+      '<label class="field"><span>Adresse du projet</span><textarea data-q="project_address" rows="2">' + esc(e.project_address) + '</textarea></label>' +
+      '<label class="field"><span>Note interne (non imprimée)</span><input data-q="notes" value="' + esc(e.notes) + '"></label></div>');
+
+    // Lignes
+    html += '<section class="card span-2"><header class="card-head"><h3>Lignes du devis</h3></header><div class="qlines" id="qlines">' +
+      (e.lines.length ? e.lines.map(lineHtml).join('') : empty('Aucune ligne : utilisez le remplissage rapide ou ajoutez une prestation.')) + '</div>' +
+      '<div class="qadd"><select id="q-add-item"><option value="">+ Ajouter une prestation du catalogue…</option>' +
+      catalog().map((it) => '<option value="' + esc(it.id) + '">' + esc(it.label) + ' — ' + esc(fmtMoney2(it.price_ttc)) + '</option>').join('') +
+      '<option value="__free">Ligne libre</option></select></div>' +
+      '<div class="qtotals" id="qtotals">' + editorTotalsHtml() + '</div></section>';
+    html += '</div>';
+
+    html += '<div class="qactions">' +
+      '<button class="btn btn-ghost" data-action="q-preview">Aperçu PDF</button>' +
+      '<button class="btn btn-ghost" data-action="q-save">Enregistrer le brouillon</button>' +
+      '<button class="btn btn-primary btn-lg" data-action="q-finalize">Valider et envoyer pour signature</button></div>';
+    return html;
+  }
+
+  // Liaison des champs de l'éditeur (sans tout redessiner, pour ne pas perdre la saisie en cours)
+  function bindQuoteEditor() {
+    const root = $('#qlines');
+    if (!root || !editor) return;
+    document.querySelectorAll('[data-q]').forEach((el) => el.addEventListener('input', () => { editor.q[el.dataset.q] = el.value; }));
+    const count = $('#q-count');
+    if (count) count.addEventListener('input', () => { editor.count = count.value; });
+    root.addEventListener('input', (ev) => {
+      const el = ev.target, line = el.closest('.qline');
+      if (!line || !el.dataset.f) return;
+      const l = editor.q.lines[Number(line.dataset.i)];
+      l[el.dataset.f] = ['qty', 'price_ttc'].includes(el.dataset.f) ? (el.value === '' ? 0 : Number(el.value)) : el.value;
+      const t = QuotePdf.computeTotals([l], company().vat_rate).rows[0];
+      line.querySelector('.qline-tot').innerHTML = '<span>PU HT ' + esc(fmtMoney2(t.pu_ht)) + '</span><b data-tot>' + esc(fmtMoney2(t.total_ttc)) + ' TTC</b>';
+      $('#qtotals').innerHTML = editorTotalsHtml();
+    });
+    const add = $('#q-add-item');
+    add.addEventListener('change', () => {
+      if (!add.value) return;
+      editor.q.lines.push(add.value === '__free' ? { label: '', description: '', unit: 'u', qty: 1, price_ttc: 0 } : lineFrom(catalogItem(add.value), 1));
+      render();
+      const last = document.querySelectorAll('.qline-label'); if (last.length) last[last.length - 1].focus();
+    });
+  }
+
+  // Enregistre le devis (création avec numéro automatique, ou mise à jour). Renvoie la ligne enregistrée.
+  async function saveEditor() {
+    const e = editor.q;
+    const lines = e.lines.filter((l) => String(l.label || '').trim() || Number(l.price_ttc));
+    if (!lines.length) throw new Error('Ajoutez au moins une ligne au devis.');
+    if (lines.some((l) => !String(l.label || '').trim())) throw new Error('Chaque ligne doit avoir une désignation.');
+    const t = QuotePdf.computeTotals(lines, company().vat_rate);
+    const patch = { title: e.title.trim(), project_address: e.project_address.trim(), issue_date: e.issue_date || null, valid_until: e.valid_until || null,
+      notes: e.notes, lines, amount: t.ttc, total_ht: t.ht, total_tva: t.tva };
+    let row;
+    if (editor.id) {
+      const before = S.data.quotes.find((x) => x.id === editor.id);
+      // Contenu modifié après envoi : l'ancien lien de signature ne doit plus servir
+      if (before && before.sign_status === 'envoye') Object.assign(patch, { sign_status: 'aucune', sign_sent_at: null, sign_expires_at: null });
+      row = await S.update('quotes', editor.id, patch);
+    } else {
+      const reference = await S.nextQuoteReference();
+      row = await S.insert('quotes', Object.assign(patch, { client_id: editor.clientId, reference, status: 'brouillon', sent_date: null }));
+      await logActivity(editor.clientId, 'note', 'Devis ' + reference + ' créé (' + fmtMoney2(t.ttc) + ' TTC)');
+      editor.id = row.id; editor.key = row.id; editor.q.reference = reference;
+    }
+    editor.q.lines = lines;
+    return row;
+  }
+
+  async function quotePdfBytes(q) {
+    return QuotePdf.build(q, client(q.client_id) || {}, company());
+  }
+
+  const quoteFileName = (q) => 'Devis-' + String(q.reference || 'devis').replace(/[^\w-]+/g, '_') + '.pdf';
 
   // ================================================================ paiements
   function qrSvg(text) {
@@ -1141,9 +1366,9 @@
     if (S.isAdmin()) {
       html += card('Devis', (quotes.length ? '<div class="list">' + quotes.map((q) =>
         '<button class="row" data-action="open-quote" data-quote="' + q.id + '"><div class="row-main"><div class="row-title">' + esc(q.reference || 'Devis') + ' · ' + fmtMoney(q.amount) + '</div>' +
-        '<div class="row-sub">Envoyé le ' + fmtDate(q.sent_date) + (q.notes ? ' · ' + esc(q.notes) : '') + '</div></div>' + signBadge(q) + badge(QUOTE_STATUS, q.status) + '</button>').join('') + '</div>'
-        : empty('Aucun devis enregistré.')) + '<p class="muted small pad">Les devis restent créés dans Tolteck : notez ici le numéro et le montant pour le suivi.</p>',
-        '<button class="btn btn-ghost btn-sm" data-action="new-quote" data-client="' + c.id + '">' + icon('plus') + 'Devis</button>');
+        '<div class="row-sub">' + (q.title ? esc(q.title) + ' · ' : '') + (q.status === 'brouillon' ? 'Brouillon du ' + fmtDate(q.issue_date || q.created_at) : 'Envoyé le ' + fmtDate(q.sent_date || q.issue_date)) + (q.notes ? ' · ' + esc(q.notes) : '') + '</div></div>' + signBadge(q) + badge(QUOTE_STATUS, q.status) + '</button>').join('') + '</div>'
+        : empty('Aucun devis pour ce client.')) + '<p class="muted small pad">Créez le devis ici : les coordonnées et l’installation du client sont reprises automatiquement. Un devis déjà fait ailleurs ? <button class="link" data-action="new-quote" data-client="' + c.id + '">Importer un PDF</button></p>',
+        '<button class="btn btn-primary btn-sm" data-action="new-crm-quote" data-client="' + c.id + '">' + icon('plus') + 'Créer un devis</button>');
     }
 
     const pays = S.data.payments.filter((p) => p.client_id === id).sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -1262,6 +1487,28 @@
         fieldHtml({ name: 'iban', label: 'IBAN', placeholder: 'FR76 …' }, bank.iban) +
         fieldHtml({ name: 'bic', label: 'BIC' }, bank.bic) +
         '<div class="form-actions"><button class="btn btn-primary" type="submit">Enregistrer</button></div></form></section>';
+      // Mentions imprimées sur les devis
+      const f = (name, label, opts) => fieldHtml(Object.assign({ name, label }, opts || {}), co[name]);
+      html += '<section class="card span-2"><header class="card-head"><h3>Mentions des devis</h3></header><form class="settings-form" data-kind="quote">' +
+        '<p class="muted small">Ces informations apparaissent sur chaque devis créé dans le CRM.</p><div class="form-grid">' +
+        f('legal_name', 'Raison sociale', { half: true }) + f('trade_name', 'Nom commercial', { half: true }) +
+        f('address', 'Adresse (en-tête)', { type: 'textarea', rows: 2, half: true }) + f('siege', 'Siège social (pied de page)', { half: true }) +
+        f('phone', 'Téléphone', { half: true }) + f('email', 'E-mail', { half: true }) +
+        f('legal_form', 'Forme juridique', { half: true }) + f('capital', 'Capital social', { half: true }) +
+        f('siret', 'SIRET', { half: true }) + f('rcs', 'RCS', { half: true }) +
+        f('tva_number', 'N° de TVA intracommunautaire', { half: true }) + f('insurance', 'Assurance (assureur, n° de contrat)', { half: true }) +
+        f('iban', 'IBAN (pied de page)', { half: true }) + f('vat_rate', 'Taux de TVA (%)', { half: true, inputmode: 'decimal' }) +
+        f('validity_days', 'Validité des devis (jours)', { half: true, inputmode: 'numeric' }) + f('payment_terms', 'Conditions de paiement', { half: true }) +
+        f('vat_mention', 'Mention TVA réduite', { type: 'textarea', rows: 3 }) + f('extra_mention', 'Autre mention', { type: 'textarea', rows: 2 }) +
+        '</div><div class="form-actions"><button class="btn btn-primary" type="submit">Enregistrer les mentions</button></div></form></section>';
+
+      // Catalogue des prestations
+      html += '<section class="card span-2"><header class="card-head"><h3>Catalogue des prestations</h3><button class="btn btn-ghost btn-sm" data-action="cat-new">' + icon('plus') + 'Prestation</button></header>' +
+        '<div class="list">' + catalog().map((it) => '<button class="row" data-action="cat-edit" data-id="' + esc(it.id) + '"><div class="row-main"><div class="row-title">' + esc(it.label) + '</div>' +
+          '<div class="row-sub">' + esc(fmtMoney2(it.price_ttc)) + ' TTC / ' + esc(it.unit) + (it.description ? ' · ' + esc(it.description.slice(0, 70)) + '…' : '') + '</div></div></button>').join('') + '</div>' +
+        '<p class="muted small pad">Le remplissage rapide utilise les forfaits « 5 inclus » et les lignes « supplémentaires » de chaque type (radiateurs, plancher, mixte).</p>' +
+        '<div class="pad numbering"><span>Numérotation : le prochain devis portera le n° <b id="next-quote-n">…</b></span> <button class="link" data-action="counter-edit">Modifier</button></div></section>';
+
       // Envoi des e-mails via un script Google (Gmail du gérant)
       const em = S.data.settings.email || {};
       html += '<section class="card"><header class="card-head"><h3>Envoi des e-mails</h3>' + (emailReady() ? '<span class="badge" style="--c:#1f9d55">Actif</span>' : '<span class="badge" style="--c:#8a94a3">Non réglé</span>') + '</header>' +
@@ -1328,6 +1575,7 @@
       else if (section === 'clients') html = viewClients(params);
       else if (section === 'pipeline' && S.isAdmin()) html = viewPipeline();
       else if (section === 'rdv' && parts[1]) html = viewAppointment(parts[1]);
+      else if (section === 'devis') html = viewQuoteEditor(parts[1] === 'nouveau' ? null : parts[1], params);
       else if (section === 'equipe') html = viewTeam();
       else if (section === 'demo-paiement' && parts[1] && S.mode === 'demo') html = viewDemoCheckout(parts[1]);
       else if (section === 'reglages') html = viewSettings();
@@ -1343,7 +1591,7 @@
     window.scrollTo(0, sameRoute ? scroll : 0);
     document.querySelectorAll('.nav a').forEach((a) => {
       const target = a.getAttribute('href').slice(2).split('/')[0];
-      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'equipe', 'reglages', 'rdv'].includes(section)) || (target === 'agenda' && section === 'rdv'));
+      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'equipe', 'reglages', 'rdv', 'devis'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis'));
     });
     bindView();
   }
@@ -1418,6 +1666,7 @@
 
   // ================================================================ interactions
   function bindView() {
+    bindQuoteEditor();
     const search = $('#client-search');
     if (search) {
       search.addEventListener('input', () => {
@@ -1461,10 +1710,23 @@
         toast("L'URL doit ressembler à https://script.google.com/macros/s/…/exec", true); return;
       }
       if (form.dataset.kind === 'notify') out.ntfy_topic = out.ntfy_topic.replace(/[^\w-]/g, '');
-      await guard(() => S.saveSetting({ company: 'company', bank: 'bank', sms: 'sms_templates', email: 'email', notify: 'notify' }[form.dataset.kind], out));
+      if (form.dataset.kind === 'quote') {
+        out.validity_days = Math.max(1, parseInt(out.validity_days, 10) || 30);
+        out.vat_rate = Number(String(out.vat_rate).replace(',', '.')) || 10;
+      }
+      const key = { company: 'company', quote: 'company', bank: 'bank', sms: 'sms_templates', email: 'email', notify: 'notify' }[form.dataset.kind];
+      // Les réglages « entreprise » et « mentions des devis » partagent le même enregistrement : on fusionne.
+      if (key === 'company') Object.keys(out).forEach((k) => { if (out[k] === '' && form.elements[k] && form.elements[k].dataset.keepDefault) delete out[k]; });
+      await guard(() => S.saveSetting(key, key === 'company' ? Object.assign({}, S.data.settings.company || {}, out) : out));
       toast('Réglages enregistrés');
       render();
     }));
+
+    const nextN = $('#next-quote-n');
+    if (nextN) S.getQuoteCounter().then((n) => {
+      const d = new Date();
+      nextN.textContent = 'DEV-' + d.getFullYear() + '/' + pad(d.getMonth() + 1) + '-' + String((n || 0) + 1).padStart(4, '0');
+    }).catch(() => { nextN.textContent = '(à activer : exécutez devis.sql dans Supabase)'; });
 
     const cgvInput = $('#cgv-file');
     if (cgvInput) cgvInput.addEventListener('change', async () => {
@@ -1583,6 +1845,65 @@
       // Pas joint : on propose tout de suite de programmer le prochain rappel.
       if (type === 'joint') toast(label + ' — noté');
       else askReminder(client(c.id), label + ' — noté. Quand le recontacter ?');
+    },
+    'cat-new': () => editCatalogItem(null),
+    'cat-edit': (el) => editCatalogItem(catalog().find((x) => x.id === el.dataset.id)),
+    'counter-edit': async () => {
+      const current = await guard(() => S.getQuoteCounter());
+      openForm({
+        title: 'Numérotation des devis',
+        fields: [{ name: 'last', label: 'Dernier numéro utilisé', type: 'number', required: true, hint: 'Le prochain devis prendra ce numéro + 1. À ne modifier que pour rester aligné avec vos anciens devis.' }],
+        values: { last: current },
+        onSubmit: async (v) => { await S.setQuoteCounter(Math.max(0, Math.round(v.last))); toast('Numérotation mise à jour'); }
+      });
+    },
+    'new-crm-quote': (el) => { editor = null; location.hash = '#/devis/nouveau?client=' + el.dataset.client; },
+    'q-kind': (el) => {
+      editor.kind = el.dataset.kind;
+      editor.q.title = QUOTE_KINDS[editor.kind].title;
+      editor.q.lines = linesFor(editor.kind, editor.count);
+      render();
+    },
+    'q-generate': () => {
+      if (!editor.kind) editor.kind = 'radiateurs';
+      editor.q.lines = linesFor(editor.kind, editor.count);
+      editor.q.title = editor.q.title || QUOTE_KINDS[editor.kind].title;
+      render(); toast('Lignes remplies');
+    },
+    'q-del-line': (el) => { editor.q.lines.splice(Number(el.dataset.i), 1); render(); },
+    'q-preview': async (el) => {
+      el.disabled = true;
+      try {
+        const bytes = await guard(() => QuotePdf.build(Object.assign({}, editor.q, { reference: editor.q.reference || '(numéro attribué à l’enregistrement)' }), client(editor.clientId), company()));
+        window.open(URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), '_blank');
+      } catch (e) { /* déjà signalé */ }
+      el.disabled = false;
+    },
+    'q-save': async (el) => {
+      el.disabled = true;
+      try {
+        const row = await guard(saveEditor);
+        toast('Brouillon ' + row.reference + ' enregistré');
+        history.replaceState(null, '', '#/devis/' + row.id); render();
+      } catch (e) { el.disabled = false; }
+    },
+    'q-finalize': async (el) => {
+      el.disabled = true; el.textContent = 'Création du PDF…';
+      try {
+        const row = await guard(async () => {
+          const saved = await saveEditor();
+          const bytes = await quotePdfBytes(saved);
+          return S.uploadQuotePdf(saved, new File([bytes], quoteFileName(saved), { type: 'application/pdf' }));
+        });
+        editor = null;
+        location.hash = '#/clients/' + row.client_id;
+        setTimeout(() => quoteSheet(row), 150);
+      } catch (e) { el.disabled = false; el.textContent = 'Valider et envoyer pour signature'; }
+    },
+    'q-download': async (el) => {
+      const q = S.data.quotes.find((x) => x.id === el.dataset.quote);
+      const bytes = await guard(() => (q.pdf_path ? S.getQuotePdf(q.pdf_path) : quotePdfBytes(q)));
+      window.SignedPdf.download(bytes, quoteFileName(q));
     },
     'copy-field': (el) => {
       const input = el.parentNode.querySelector('input');

@@ -201,6 +201,37 @@
     return this.refresh('payments', paymentId);
   };
 
+  // ---------------------------------------------------------------- numérotation des devis (DEV-AAAA/MM-0241…)
+  const quoteRef = (n) => {
+    const d = new Date();
+    return 'DEV-' + d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(n).padStart(4, '0');
+  };
+
+  Store.nextQuoteReference = async function () {
+    if (this.mode === 'demo') {
+      const n = (demoDb.settings.quote_counter || 240) + 1;
+      demoDb.settings.quote_counter = n;
+      demoSave();
+      return quoteRef(n);
+    }
+    const { data, error } = await this.sb.rpc('next_quote_reference');
+    if (error) throw new Error('Numérotation impossible : ' + error.message);
+    return data;
+  };
+
+  Store.getQuoteCounter = async function () {
+    if (this.mode === 'demo') return demoDb.settings.quote_counter || 240;
+    const { data, error } = await this.sb.rpc('get_quote_counter');
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  Store.setQuoteCounter = async function (n) {
+    if (this.mode === 'demo') { demoDb.settings.quote_counter = n; demoSave(); return; }
+    const { error } = await this.sb.rpc('set_quote_counter', { p_value: n });
+    if (error) throw new Error(error.message);
+  };
+
   // ---------------------------------------------------------------- PDF des devis (signature électronique)
   // Dépose le PDF d'un devis. Le dossier porte le « jeton » secret du lien de signature.
   Store.uploadQuotePdf = async function (quote, file) {

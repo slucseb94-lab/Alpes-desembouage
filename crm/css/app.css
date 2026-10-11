@@ -367,3 +367,29 @@ dialog#modal::backdrop { background: rgba(13, 30, 50, 0.45); }
 .check-line { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
 .check-line input { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0; }
 .center-line { justify-content: center; margin: 4px 0 6px; }
+
+/* ------------------------------------------------------------ éditeur de devis */
+.qgen { display: flex; flex-direction: column; gap: 12px; }
+.seg-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg-btns .chip { cursor: pointer; }
+.qlines { display: flex; flex-direction: column; gap: 10px; padding: 0 16px; }
+.qline { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: #fbfcfd; }
+.qline-head { display: flex; align-items: center; gap: 8px; }
+.qline-n { width: 24px; height: 24px; border-radius: 50%; background: var(--blue-50); color: var(--blue-700); display: grid; place-items: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.qline input, .qline textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 15px; background: #fff; }
+.qline-label { font-weight: 600; flex: 1; min-width: 0; }
+.qline textarea { font-size: 13px; color: var(--muted); resize: vertical; }
+.qline-nums { display: grid; grid-template-columns: 80px 90px 110px 1fr; gap: 8px; align-items: end; }
+.qline-nums label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.qline-tot { display: flex; flex-direction: column; align-items: flex-end; font-size: 12px; color: var(--muted); }
+.qline-tot b { font-size: 15px; color: var(--text); }
+@media (max-width: 520px) { .qline-nums { grid-template-columns: 1fr 1fr 1fr; } .qline-tot { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; } }
+.qadd { padding: 12px 16px 4px; }
+.qadd select { width: 100%; height: 44px; border: 1px dashed #b9c3d0; border-radius: 10px; padding: 0 10px; background: #fff; color: var(--blue-700); font-weight: 600; }
+.qtotals { margin: 12px 16px 16px auto; max-width: 300px; display: flex; flex-direction: column; gap: 4px; }
+.qt-row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 10px; }
+.qt-ttc { background: var(--blue-700); color: #fff; border-radius: 8px; font-size: 16px; padding: 8px 10px; }
+.qactions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+@media (max-width: 599px) { .qactions .btn { flex: 1 1 100%; } }
+.numbering { font-size: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.link { background: none; border: 0; cursor: pointer; padding: 0; }
