@@ -1,4 +1,4 @@
-// Calcul des totaux et fabrication du PDF d'un devis créé dans le CRM (mise en page reprise des devis Tolteck).
+// Calcul des totaux et fabrication du PDF d'un devis créé dans le CRM.
 // Les prix sont saisis TTC (590 €, 50 €…) : le HT et la TVA en sont déduits, comme dans Tolteck.
 (function () {
   const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -64,127 +64,180 @@
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-    const W = 595.28, H = 841.89, M = 40, R = W - M;
-    const ink = rgb(0.1, 0.12, 0.15), gray = rgb(0.38, 0.42, 0.48), blue = rgb(0.36, 0.5, 0.74), light = rgb(0.94, 0.95, 0.97), navy = rgb(0.05, 0.24, 0.45);
+    const W = 595.28, H = 841.89, M = 42, R = W - M;
+    // Couleurs du site : bleu marine, bleu, orange
+    const ink = rgb(0.1, 0.12, 0.15), gray = rgb(0.36, 0.4, 0.46), soft = rgb(0.55, 0.59, 0.65);
+    const navy = rgb(0.05, 0.24, 0.45), blue = rgb(0.08, 0.35, 0.62), orange = rgb(0.94, 0.46, 0.17);
+    const light = rgb(0.953, 0.965, 0.98), line = rgb(0.86, 0.89, 0.93), white = rgb(1, 1, 1);
     const t = computeTotals(quote.lines, co.vat_rate);
     const logoData = await logoPng();
     const logo = logoData ? await doc.embedPng(logoData) : null;
+    const brand = safe(co.name || co.legal_name || '');
 
     let page, y;
     const pages = [];
-    const txt = (s, x, yy, o) => page.drawText(safe(s), Object.assign({ x, y: yy, size: 9.5, font, color: ink }, o));
-    const right = (s, xr, yy, o) => { const f = (o && o.font) || font, sz = (o && o.size) || 9.5; txt(s, xr - f.widthOfTextAtSize(safe(s), sz), yy, o); };
-    const newPage = () => { page = doc.addPage([W, H]); pages.push(page); y = H - 50; };
+    const txt = (s, x, yy, o) => page.drawText(safe(s), Object.assign({ x, y: yy, size: 10.5, font, color: ink }, o));
+    const width = (s, o) => ((o && o.font) || font).widthOfTextAtSize(safe(s), (o && o.size) || 10.5);
+    const right = (s, xr, yy, o) => txt(s, xr - width(s, o), yy, o);
+    // Rectangle à coins arrondis (yTop = bord supérieur)
+    const box = (x, yTop, w, h, color, r, border) => {
+      r = Math.min(r == null ? 8 : r, h / 2, w / 2);
+      const p = 'M ' + r + ' 0 H ' + (w - r) + ' Q ' + w + ' 0 ' + w + ' ' + r + ' V ' + (h - r) + ' Q ' + w + ' ' + h + ' ' + (w - r) + ' ' + h +
+        ' H ' + r + ' Q 0 ' + h + ' 0 ' + (h - r) + ' V ' + r + ' Q 0 0 ' + r + ' 0 Z';
+      page.drawSvgPath(p, Object.assign({ x, y: yTop }, color ? { color } : {}, border ? { borderColor: border, borderWidth: 0.8 } : {}));
+    };
+    const label = (s, x, yy, color) => txt(String(s).toUpperCase(), x, yy, { font: bold, size: 7.8, color: color || blue });
 
-    // Colonnes du tableau
-    const C = { n: M + 6, des: M + 26, desW: 268, qty: 392, pu: 452, tva: 492, tot: R - 6 };
+    const newPage = () => { page = doc.addPage([W, H]); pages.push(page); };
+
+    // ---------------------------------------------------------------- en-tête (première page)
+    newPage();
+    y = H - 46;
+    if (logo) page.drawImage(logo, { x: M - 4, y: y - 46, width: 58, height: 58 });
+    const bx = logo ? M + 62 : M;
+    txt(brand, bx, y - 18, { font: bold, size: 25, color: navy });
+    txt(co.tagline || 'Désembouage de circuits de chauffage', bx, y - 35, { size: 10.5, color: gray });
+
+    right('DEVIS', R, y - 18, { font: bold, size: 28, color: orange });
+    right('N° ' + (quote.reference || ''), R, y - 35, { font: bold, size: 11.5, color: navy });
+    y -= 62;
+    // fine ligne d'accent : marine + touche orange
+    page.drawRectangle({ x: M, y, width: R - M, height: 1, color: line });
+    page.drawRectangle({ x: M, y: y - 1, width: 70, height: 3, color: orange });
+
+    // Date et validité
+    y -= 22;
+    txt('Date : ', M, y, { size: 10, color: gray });
+    txt(frDate(quote.issue_date), M + width('Date : ', { size: 10 }), y, { font: bold, size: 10 });
+    const valid = 'Valable jusqu\'au ' + frDate(quote.valid_until);
+    right(valid, R, y, { size: 10, color: gray });
+
+    // ---------------------------------------------------------------- cartes émetteur / client
+    y -= 16;
+    const gap = 14, cw = (R - M - gap) / 2, pad = 14;
+    const emit = [].concat(safe(co.address || '').split('\n'), [co.phone ? 'Tél. ' + co.phone : '', co.email || '']).filter(Boolean);
+    const cli = [].concat(client.company ? [client.company] : [], safe(client.address || '').split('\n'), [[client.postal_code, client.city].filter(Boolean).join(' ')]).filter(Boolean);
+    const cardH = 38 + Math.max(emit.length, cli.length) * 14 + 6;
+    box(M, y, cw, cardH, light);
+    box(M + cw + gap, y, cw, cardH, null, 8, line);
+    page.drawRectangle({ x: M + cw + gap, y: y - cardH + 8, width: 3, height: cardH - 16, color: orange });
+    label('Émetteur', M + pad, y - 18);
+    txt(co.legal_name || brand, M + pad, y - 33, { font: bold, size: 12 });
+    emit.forEach((l, i) => txt(l, M + pad, y - 49 - i * 14, { size: 10, color: gray }));
+    const cx = M + cw + gap + pad + 4;
+    label('Client', cx, y - 18, orange);
+    txt(client.name || '', cx, y - 33, { font: bold, size: 12.5 });
+    cli.forEach((l, i) => txt(l, cx, y - 49 - i * 14, { size: 10, color: gray }));
+    y -= cardH + 16;
+
+    // Adresse du chantier
+    const proj = safe(quote.project_address || '').replace(/\n+/g, ', ').trim();
+    if (proj) {
+      label('Adresse du chantier', M, y);
+      const pl = wrap(proj, font, 10.5, R - M - 130);
+      pl.forEach((l, i) => txt(l, M + 122, y - i * 14, { size: 10.5 }));
+      y -= pl.length * 14 + 12;
+    }
+
+    // Objet
+    if (quote.title) {
+      txt(quote.title, M, y - 4, { font: bold, size: 16, color: navy });
+      y -= 26;
+    }
+
+    // ---------------------------------------------------------------- tableau des prestations
+    const C = { n: M + 12, des: M + 34, desW: 236, qty: 362, pu: 432, tva: 472, tot: R - 12 };
     const tableHead = () => {
-      page.drawRectangle({ x: M, y: y - 6, width: R - M, height: 20, color: blue });
-      const o = { font: bold, size: 9, color: rgb(1, 1, 1) };
-      txt('N°', C.n, y, o); txt('Désignation', C.des, y, o); right('Qté', C.qty, y, o); right('PU HT', C.pu, y, o); right('TVA', C.tva + 10, y, o); right('Total HT', C.tot, y, o);
+      box(M, y, R - M, 26, navy, 6);
+      const o = { font: bold, size: 9.5, color: white };
+      const yy = y - 17;
+      txt('N°', C.n, yy, o); txt('Désignation', C.des, yy, o); right('Qté', C.qty, yy, o);
+      right('PU HT', C.pu, yy, o); right('TVA', C.tva, yy, o); right('Total HT', C.tot, yy, o);
       y -= 26;
     };
+    const continuedHeader = () => {
+      newPage();
+      y = H - 46;
+      txt(brand, M, y - 10, { font: bold, size: 14, color: navy });
+      right('Devis n° ' + (quote.reference || '') + ' (suite)', R, y - 10, { size: 10, color: gray });
+      page.drawRectangle({ x: M, y: y - 22, width: R - M, height: 1, color: line });
+      y -= 40;
+    };
 
-    newPage();
-    // ---------------------------------------------------------------- en-tête
-    if (logo) page.drawImage(logo, { x: M, y: y - 34, width: 44, height: 44 });
-    const hx = logo ? M + 54 : M;
-    txt(co.legal_name || co.name, hx, y - 6, { font: bold, size: 20 });
-    txt(co.trade_name || '', hx, y - 22, { size: 10, color: gray });
-    y -= 58;
-
-    const top = y;
-    const coLines = [].concat(safe(co.address || '').split('\n'), ['France', co.phone ? 'Tél : ' + co.phone : '', co.email || '']).filter(Boolean);
-    coLines.forEach((l, i) => txt(l, M, top - i * 12.5, { size: 9.5 }));
-
-    // Bloc client (à droite)
-    const cx = 318;
-    const clientLines = [].concat(safe(client.address || '').split('\n'), [[client.postal_code, client.city].filter(Boolean).join(' '), 'France']).filter(Boolean);
-    const boxH = 22 + (clientLines.length + (client.company ? 1 : 0)) * 12.5;
-    page.drawRectangle({ x: cx - 10, y: top - boxH + 12, width: R - cx + 10, height: boxH, color: light });
-    txt(client.name, cx, top - 2, { font: bold, size: 10.5 });
-    let cy = top - 16;
-    if (client.company) { txt(client.company, cx, cy); cy -= 12.5; }
-    clientLines.forEach((l) => { txt(l, cx, cy); cy -= 12.5; });
-
-    y = Math.min(top - coLines.length * 12.5, top - boxH) - 16;
-
-    // Date, numéro, validité / adresse du projet
-    const infoTop = y;
-    txt('En date du ' + frDate(quote.issue_date), M, y, { size: 9.5, color: gray });
-    txt('Devis n° ' + (quote.reference || ''), M, y - 18, { font: bold, size: 13, color: navy });
-    txt('Valable jusqu\'au ' + frDate(quote.valid_until), M, y - 33, { size: 9.5, color: gray });
-    const proj = safe(quote.project_address || '').split('\n').filter(Boolean);
-    if (proj.length) {
-      txt('Adresse du projet :', cx, infoTop, { size: 9, color: gray });
-      page.drawRectangle({ x: cx - 10, y: infoTop - 10 - proj.length * 12.5 - 4, width: R - cx + 10, height: proj.length * 12.5 + 8, color: light });
-      proj.forEach((l, i) => txt(l, cx, infoTop - 18 - i * 12.5));
-    }
-    y = Math.min(infoTop - 50, infoTop - 26 - proj.length * 12.5) - 14;
-
-    if (quote.title) { txt(quote.title, M, y, { font: bold, size: 12 }); y -= 22; }
-
-    // ---------------------------------------------------------------- lignes
     tableHead();
     t.rows.forEach((l, i) => {
-      const label = wrap(l.label, bold, 9.5, C.desW);
-      const desc = l.description ? wrap(l.description, font, 8.3, C.desW) : [];
-      const h = label.length * 12 + desc.length * 10.5 + 10;
-      if (y - h < 150) { newPage(); tableHead(); }
-      txt(String(i + 1), C.n, y);
-      label.forEach((ln, k) => txt(ln, C.des, y - k * 12, { font: bold }));
-      desc.forEach((ln, k) => txt(ln, C.des, y - label.length * 12 - k * 10.5, { size: 8.3, color: gray }));
-      right(String(Number(l.qty).toLocaleString('fr-FR')) + ' ' + (l.unit || ''), C.qty, y);
-      right(eur(l.pu_ht), C.pu, y);
-      right(t.rate + ' %', C.tva + 10, y);
-      right(eur(l.total_ht), C.tot, y);
+      const lab = wrap(l.label, bold, 11, C.desW);
+      const desc = l.description ? wrap(l.description, font, 9.3, C.desW) : [];
+      const h = 16 + lab.length * 14 + (desc.length ? 4 + desc.length * 12.2 : 0);
+      if (y - h < 190) { continuedHeader(); tableHead(); }
+      if (i % 2 === 1) page.drawRectangle({ x: M, y: y - h, width: R - M, height: h, color: light });
+      const yy = y - 18;
+      txt(String(i + 1), C.n, yy, { font: bold, size: 10.5, color: soft });
+      lab.forEach((ln, k) => txt(ln, C.des, yy - k * 14, { font: bold, size: 11 }));
+      desc.forEach((ln, k) => txt(ln, C.des, yy - lab.length * 14 - 4 - k * 12.2, { size: 9.3, color: gray }));
+      right(Number(l.qty).toLocaleString('fr-FR') + ' ' + (l.unit || ''), C.qty, yy, { size: 10.5 });
+      right(eur(l.pu_ht), C.pu, yy, { size: 10.5 });
+      right(t.rate + ' %', C.tva, yy, { size: 10.5, color: gray });
+      right(eur(l.total_ht), C.tot, yy, { font: bold, size: 10.5 });
       y -= h;
-      page.drawLine({ start: { x: M, y: y + 5 }, end: { x: R, y: y + 5 }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
     });
+    page.drawRectangle({ x: M, y, width: R - M, height: 1, color: line });
 
-    // ---------------------------------------------------------------- totaux
-    if (y < 230) newPage();
-    y -= 10;
-    const terms = wrap(co.payment_terms || '', font, 9, 240);
-    terms.forEach((ln, k) => txt(ln, M, y - k * 12, { size: 9, color: gray }));
-    const tx = 340;
-    txt('Total HT', tx, y); right(eur(t.ht), C.tot, y);
-    txt('TVA à ' + t.rate + ' %', tx, y - 16); right(eur(t.tva), C.tot, y - 16);
-    page.drawRectangle({ x: tx - 8, y: y - 39, width: R - tx + 8, height: 20, color: blue });
-    txt('Total TTC', tx, y - 33, { font: bold, color: rgb(1, 1, 1), size: 10.5 }); right(eur(t.ttc), C.tot, y - 33, { font: bold, color: rgb(1, 1, 1), size: 10.5 });
-    y = Math.min(y - terms.length * 12, y - 39) - 22;
+    // ---------------------------------------------------------------- totaux + conditions
+    if (y < 250) continuedHeader();
+    y -= 18;
+    const tw = 232, tx = R - tw;
+    box(tx, y, tw, 96, light);
+    txt('Total HT', tx + 16, y - 22, { size: 10.5, color: gray }); right(eur(t.ht), R - 16, y - 22, { size: 10.5 });
+    txt('TVA ' + t.rate + ' %', tx + 16, y - 42, { size: 10.5, color: gray }); right(eur(t.tva), R - 16, y - 42, { size: 10.5 });
+    box(tx, y - 56, tw, 40, navy, 8);
+    txt('Total TTC', tx + 16, y - 81, { font: bold, size: 12, color: white });
+    right(eur(t.ttc), R - 16, y - 82, { font: bold, size: 17, color: white });
+
+    const lw = tx - M - 24;
+    label('Conditions de paiement', M, y - 12);
+    const terms = wrap(co.payment_terms || '', font, 10, lw);
+    terms.forEach((ln, k) => txt(ln, M, y - 28 - k * 13.5, { size: 10 }));
+    let ly = y - 28 - terms.length * 13.5 - 10;
+    label('Validité', M, ly);
+    txt('Ce devis est valable jusqu\'au ' + frDate(quote.valid_until) + '.', M, ly - 16, { size: 10 });
+    y = Math.min(y - 96, ly - 16) - 18;
 
     // ---------------------------------------------------------------- mentions
     [co.vat_mention, co.extra_mention].filter(Boolean).forEach((m) => {
-      wrap(m, font, 8.3, R - M).forEach((ln) => { if (y < 70) newPage(); txt(ln, M, y, { size: 8.3, color: gray }); y -= 10.5; });
-      y -= 4;
+      wrap(m, font, 8.8, R - M).forEach((ln) => { if (y < 80) continuedHeader(); txt(ln, M, y, { size: 8.8, color: gray }); y -= 11.5; });
+      y -= 5;
     });
 
-    // ---------------------------------------------------------------- accord du client
-    if (y < 150) newPage();
-    y -= 14;
-    const bx = 318;
-    page.drawRectangle({ x: bx - 10, y: y - 72, width: R - bx + 10, height: 84, borderColor: rgb(0.8, 0.83, 0.87), borderWidth: 0.8 });
-    txt('Le client', bx, y - 4, { font: bold, size: 10 });
-    txt('« Devis reçu avant l\'exécution des travaux.', bx, y - 20, { size: 8.5, color: gray });
-    txt('Bon pour travaux. »', bx, y - 31, { size: 8.5, color: gray });
-    txt('Signature électronique : voir le certificat', bx, y - 52, { size: 8, color: gray });
-    txt('joint en fin de document une fois signé.', bx, y - 62, { size: 8, color: gray });
-    txt(co.legal_name || co.name, M, y - 4, { font: bold, size: 10 });
+    // ---------------------------------------------------------------- signatures
+    if (y - 104 < 66) continuedHeader();
+    y -= 12;
+    const sh = 86;
+    box(M, y, cw, sh, null, 8, line);
+    box(M + cw + gap, y, cw, sh, null, 8, line);
+    label('L\'entreprise', M + pad, y - 18);
+    txt(co.legal_name || brand, M + pad, y - 34, { font: bold, size: 11 });
+    txt(brand, M + pad, y - 49, { size: 9.5, color: gray });
+    label('Le client — bon pour accord', cx, y - 18, orange);
+    txt('« Devis reçu avant l\'exécution des travaux.', cx, y - 34, { size: 9.5, color: gray });
+    txt('Bon pour travaux. »', cx, y - 47, { size: 9.5, color: gray });
+    txt('Signature électronique : voir le certificat', cx, y - 68, { size: 8.5, color: soft });
+    txt('joint en fin de document une fois signé.', cx, y - 79, { size: 8.5, color: soft });
 
     // ---------------------------------------------------------------- pied de page (toutes les pages)
-    const foot1 = [co.legal_name, safe(co.address || '').replace(/\n/g, ', ') + ', France', co.phone ? 'Téléphone : ' + co.phone : '', co.email ? 'e-mail : ' + co.email : ''].filter(Boolean).join(' — ');
+    const foot1 = [co.legal_name, safe(co.address || '').replace(/\n/g, ', '), co.phone ? 'Tél. ' + co.phone : '', co.email || ''].filter(Boolean).join('  ·  ');
     const foot2 = [[co.legal_form, co.capital ? 'au capital de ' + co.capital : ''].filter(Boolean).join(' '), co.siege ? 'Siège : ' + co.siege : '',
-      co.siret ? 'SIRET : ' + co.siret : '', co.rcs || '', co.tva_number ? 'TVA : ' + co.tva_number : '', co.insurance ? 'Assurance : ' + co.insurance : '', co.iban ? 'IBAN : ' + co.iban : ''].filter(Boolean).join(' — ');
+      co.siret ? 'SIRET ' + co.siret : '', co.rcs || '', co.tva_number ? 'TVA ' + co.tva_number : '', co.insurance ? 'Assurance ' + co.insurance : '', co.iban ? 'IBAN ' + co.iban : ''].filter(Boolean).join('  ·  ');
     pages.forEach((p, i) => {
       page = p;
-      const lines = wrap(foot1, font, 6.8, R - M - 50).concat(wrap(foot2, font, 6.8, R - M - 50));
-      lines.forEach((ln, k) => txt(ln, M, 46 - k * 8.5, { size: 6.8, color: gray }));
-      right('Page ' + (i + 1) + ' / ' + pages.length, R, 46, { size: 7, color: gray });
+      page.drawRectangle({ x: M, y: 60, width: R - M, height: 0.8, color: line });
+      const lines = wrap(foot1, font, 7.3, R - M - 60).concat(wrap(foot2, font, 7.3, R - M - 60));
+      lines.slice(0, 4).forEach((ln, k) => txt(ln, M, 49 - k * 9, { size: 7.3, color: soft }));
+      right((i + 1) + ' / ' + pages.length, R, 49, { font: bold, size: 8, color: soft });
     });
 
-    doc.setTitle(safe('Devis ' + (quote.reference || '')));
-    doc.setAuthor(safe(co.legal_name || co.name || ''));
+    doc.setTitle(safe('Devis ' + (quote.reference || '') + ' - ' + brand));
+    doc.setAuthor(safe(co.legal_name || brand));
     return doc.save();
   }
 
