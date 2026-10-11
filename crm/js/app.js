@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '8 — devis intégrés';
+  const APP_VERSION = '10 — signature e-mail';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -292,20 +292,59 @@
     return data;
   }
 
-  // Corps HTML sobre : paragraphes, et le lien principal transformé en bouton.
-  function emailHtml(text, link, linkLabel) {
-    const co = company();
-    const body = esc(text).split(/\n{2,}/).map((p) => {
-      if (link && p.trim() === esc(link)) {
-        return '<p style="margin:24px 0"><a href="' + esc(link) + '" style="background:#145a9e;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">' + esc(linkLabel || 'Ouvrir') + '</a></p>';
-      }
-      return '<p style="margin:0 0 14px">' + p.replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#145a9e">$1</a>') + '</p>';
-    }).join('');
-    return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1a1f27;max-width:560px">' + body +
-      '<p style="margin-top:28px;color:#5a6472;font-size:13px">' + esc(co.name) + ' · <a href="https://www.alpes-desembouage.fr" style="color:#5a6472">www.alpes-desembouage.fr</a></p></div>';
+  // Corps HTML sobre : paragraphes ; la ligne contenant le lien principal devient un ou plusieurs boutons.
+  function emailButton(b) {
+    const primary = b.style !== 'ghost';
+    return '<a href="' + esc(b.url) + '" style="display:inline-block;margin:0 10px 10px 0;padding:12px 22px;border-radius:8px;font-weight:600;text-decoration:none;' +
+      (primary ? 'background:#145a9e;color:#ffffff;border:2px solid #145a9e' : 'background:#ffffff;color:#145a9e;border:2px solid #145a9e') + '">' + esc(b.label) + '</a>';
   }
 
-  const emailSignature = () => '\n\nCordialement,\n' + company().name + (S.user && S.user.phone ? '\n' + S.user.phone : '');
+  function emailHtml(text, opts) {
+    opts = opts || {};
+    const buttons = opts.buttons || (opts.link ? [{ url: opts.link, label: opts.linkLabel || 'Ouvrir' }] : []);
+    const body = esc(text).split(/\n{2,}/).map((p) => {
+      if (opts.link && p.trim() === esc(opts.link) && buttons.length) return '<p style="margin:22px 0 12px">' + buttons.map(emailButton).join('') + '</p>';
+      return '<p style="margin:0 0 14px">' + p.replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#145a9e">$1</a>') + '</p>';
+    }).join('');
+    const sig = emailSignatureHtml();
+    return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1a1f27;max-width:600px">' + body +
+      (sig ? '<div style="margin-top:18px">' + sig + '</div>' : '') + '</div>';
+  }
+
+  const emailSignature = () => '\n\nCordialement,';
+
+  // ---------------------------------------------------------------- signature des e-mails (collée depuis Gmail, ou générée)
+  function defaultSignatureHtml() {
+    const co = company();
+    return '<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1a1f27">' +
+      '<b style="color:#0d3d73;font-size:15px">' + esc(co.name) + '</b><br>' +
+      '<span style="color:#5a6472">Désembouage de circuits de chauffage</span><br>' +
+      'Tél. ' + esc(co.phone) + '<br>' +
+      '<a href="mailto:' + esc(co.email) + '" style="color:#145a9e">' + esc(co.email) + '</a> · ' +
+      '<a href="https://www.alpes-desembouage.fr" style="color:#145a9e">www.alpes-desembouage.fr</a></p>';
+  }
+
+  // Nettoie le HTML collé (on garde la mise en forme, on retire tout ce qui pourrait s'exécuter).
+  function sanitizeHtml(html) {
+    const doc = new DOMParser().parseFromString('<div>' + (html || '') + '</div>', 'text/html');
+    doc.querySelectorAll('script,style,iframe,object,embed,form,input,button,meta,link,base').forEach((n) => n.remove());
+    doc.querySelectorAll('*').forEach((n) => {
+      Array.from(n.attributes).forEach((a) => {
+        const name = a.name.toLowerCase(), val = String(a.value || '').trim().toLowerCase();
+        if (name.startsWith('on') || ((name === 'href' || name === 'src') && /^(javascript|vbscript|data:text)/.test(val))) n.removeAttribute(a.name);
+      });
+    });
+    return doc.body.firstChild.innerHTML.trim();
+  }
+
+  function htmlToText(html) {
+    const doc = new DOMParser().parseFromString('<div>' + (html || '') + '</div>', 'text/html');
+    doc.querySelectorAll('br').forEach((n) => n.replaceWith('\n'));
+    doc.querySelectorAll('p,div,li,tr,h1,h2,h3').forEach((n) => n.append('\n'));
+    return doc.body.textContent.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  const emailSignatureHtml = () => (emailCfg().signature_html != null ? emailCfg().signature_html : defaultSignatureHtml());
 
   function emailSheet(c, opts) {
     if (!c.email) { toast("Aucune adresse e-mail sur cette fiche.", true); return; }
@@ -322,7 +361,10 @@
       '<label class="field"><span>À</span><input value="' + esc(c.email) + '" disabled></label>' +
       '<label class="field"><span>Objet</span><input id="mail-subject" value="' + esc(opts.subject || '') + '"></label>' +
       '<label class="field"><span>Message</span><textarea id="mail-text" rows="10">' + esc(text0) + '</textarea></label>' +
-      (opts.link ? '<p class="muted small" style="grid-column:1/-1">Le lien apparaîtra sous forme de bouton « ' + esc(opts.linkLabel || 'Ouvrir') + ' » dans l\'e-mail.</p>' : '') +
+      '<p class="muted small" style="grid-column:1/-1">' +
+      (opts.link ? 'Le lien apparaîtra sous forme de bouton' + ((opts.buttons || []).length > 1 ? 's' : '') + ' ' +
+        (opts.buttons || [{ label: opts.linkLabel || 'Ouvrir' }]).map((b) => '« ' + esc(b.label) + ' »').join(' et ') + '. ' : '') +
+      'Votre signature est ajoutée automatiquement en bas de l\'e-mail.</p>' +
       '</div><div class="pay-actions"><button class="btn btn-primary btn-lg" data-m="send">' + icon('mail') + 'Envoyer</button></div>',
       (root) => {
         const btn = $('[data-m=send]', root);
@@ -331,7 +373,8 @@
           if (!subject) { toast("Ajoutez un objet.", true); return; }
           btn.disabled = true; btn.textContent = 'Envoi…';
           try {
-            await guard(() => callMailScript({ to: c.email, subject, text, html: emailHtml(text, opts.link, opts.linkLabel), fromName: company().name }));
+            const sigText = htmlToText(emailSignatureHtml());
+            await guard(() => callMailScript({ to: c.email, subject, text: text + (sigText ? '\n\n' + sigText : ''), html: emailHtml(text, opts), fromName: company().name }));
             await logActivity(c.id, 'email', opts.logText || ('E-mail envoyé : ' + subject));
             closeModal(); toast('E-mail envoyé à ' + c.email); render();
           } catch (e) { btn.disabled = false; btn.innerHTML = icon('mail') + 'Envoyer'; }
@@ -674,7 +717,8 @@
         text: 'Bonjour ' + c.name + ',\n\nVeuillez trouver ci-dessous votre devis ' + (q.reference || '') + ' d\'un montant de ' + fmtMoney2(q.amount) + ' TTC' +
           (q.with_cgv ? ', accompagné de nos conditions générales de vente' : '') + '.\n\nVous pouvez le consulter et le signer en ligne, depuis votre téléphone ou votre ordinateur :\n\n' +
           signUrl(q) + '\n\nJe reste à votre disposition pour toute question.' + emailSignature(),
-        link: signUrl(q), linkLabel: 'Consulter et signer le devis',
+        link: signUrl(q),
+        buttons: [{ url: signUrl(q) + '&voir=1', label: 'Consulter le devis', style: 'ghost' }, { url: signUrl(q) + '#signature', label: 'Signer le devis' }],
         logText: 'Lien de signature du devis ' + (q.reference || '') + ' envoyé par e-mail'
       }));
       on('send', async () => {
@@ -1654,6 +1698,12 @@
         (emailReady() ? '<button type="button" class="btn btn-ghost" data-action="test-email">Tester</button>' : '') +
         '<button class="btn btn-primary" type="submit">Enregistrer</button></div></form></section>';
 
+      // Signature ajoutée en bas de chaque e-mail
+      html += '<section class="card"><header class="card-head"><h3>Signature des e-mails</h3></header><div class="pad">' +
+        '<p class="muted small">Pour reprendre votre signature Gmail : dans Gmail, <b>Paramètres → Voir tous les paramètres → Signature</b>, sélectionnez-la entièrement, copiez (Ctrl + C), puis collez-la dans le cadre ci-dessous (Ctrl + V). La mise en forme et le logo sont conservés.</p>' +
+        '<div class="sig-editor" id="sig-editor" contenteditable="true">' + emailSignatureHtml() + '</div>' +
+        '<div class="form-actions"><button class="btn btn-ghost" data-action="sig-default">Signature par défaut</button><button class="btn btn-primary" data-action="sig-save">Enregistrer la signature</button></div></div></section>';
+
       // Notification « nouveau prospect » (application ntfy)
       const nt = S.data.settings.notify || {};
       html += '<section class="card"><header class="card-head"><h3>Alerte nouveau prospect</h3>' + (nt.ntfy_topic ? '<span class="badge" style="--c:#1f9d55">Active</span>' : '<span class="badge" style="--c:#8a94a3">Non réglée</span>') + '</header>' +
@@ -1856,7 +1906,7 @@
       const key = { company: 'company', quote: 'company', bank: 'bank', sms: 'sms_templates', email: 'email', notify: 'notify' }[form.dataset.kind];
       // Les réglages « entreprise » et « mentions des devis » partagent le même enregistrement : on fusionne.
       if (key === 'company') Object.keys(out).forEach((k) => { if (out[k] === '' && form.elements[k] && form.elements[k].dataset.keepDefault) delete out[k]; });
-      await guard(() => S.saveSetting(key, key === 'company' ? Object.assign({}, S.data.settings.company || {}, out) : out));
+      await guard(() => S.saveSetting(key, ['company', 'email'].includes(key) ? Object.assign({}, S.data.settings[key] || {}, out) : out));
       toast('Réglages enregistrés');
       render();
     }));
@@ -1985,6 +2035,12 @@
       if (type === 'joint') toast(label + ' — noté');
       else askReminder(client(c.id), label + ' — noté. Quand le recontacter ?');
     },
+    'sig-save': async () => {
+      const html = sanitizeHtml($('#sig-editor').innerHTML);
+      await guard(() => S.saveSetting('email', Object.assign({}, emailCfg(), { signature_html: html })));
+      toast('Signature enregistrée'); render();
+    },
+    'sig-default': () => { $('#sig-editor').innerHTML = defaultSignatureHtml(); toast('Signature par défaut : pensez à enregistrer'); },
     'cat-new': () => editCatalogItem(null),
     'cat-edit': (el) => editCatalogItem(catalog().find((x) => x.id === el.dataset.id)),
     'counter-edit': async () => {

@@ -178,6 +178,23 @@
     const pad = signaturePad(document.getElementById('pad'));
     document.getElementById('clear').addEventListener('click', () => pad.clear());
 
+    // Bouton « Consulter » de l'e-mail : on montre le devis, la signature s'ouvre sur demande.
+    // Bouton « Signer » (#signature) : on descend directement à la zone de signature.
+    const signForm = document.getElementById('sign-form');
+    if (new URLSearchParams(location.search).get('voir') === '1') {
+      signForm.hidden = true;
+      signForm.insertAdjacentHTML('beforebegin', '<section class="card center" id="want-sign"><h2>Le devis vous convient ?</h2>' +
+        '<p>Vous pouvez le signer en ligne en quelques secondes.</p><button class="btn btn-primary btn-lg" type="button" id="show-sign">Signer le devis</button></section>');
+      document.getElementById('show-sign').addEventListener('click', () => {
+        document.getElementById('want-sign').remove();
+        signForm.hidden = false;
+        pad.clear(); // recalcule la taille du cadre de signature, invisible jusque-là
+        signForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    } else if (location.hash === '#signature') {
+      setTimeout(() => signForm.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+    }
+
     const form = document.getElementById('sign-form');
     const err = document.getElementById('err');
     form.addEventListener('submit', async (e) => {
