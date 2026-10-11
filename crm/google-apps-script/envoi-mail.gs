@@ -9,7 +9,13 @@
  *  4. Copier l'URL de l'application Web dans le CRM.
  *
  * Les e-mails partent de VOTRE adresse Gmail (limite Google : 100 destinataires par jour).
+ * Droits demandés par Google : uniquement « Envoyer des e-mails en votre nom » (+ voir votre adresse e-mail).
  */
+
+// Ouvrir l'URL /exec dans un navigateur affiche simplement ce message (utile pour vérifier le déploiement).
+function doGet() {
+  return ContentService.createTextOutput('Script d\'envoi des e-mails du CRM Alpes Désembouage : OK.');
+}
 const CLE_SECRETE = 'COLLER_ICI_LA_CLE';
 
 function doPost(e) {
@@ -19,12 +25,16 @@ function doPost(e) {
       return reponse({ ok: false, error: 'Clé incorrecte' });
     }
     if (data.test) {
-      return reponse({ ok: true, from: Session.getActiveUser().getEmail(), quota: MailApp.getRemainingDailyQuota() });
+      return reponse({ ok: true, from: Session.getEffectiveUser().getEmail(), quota: MailApp.getRemainingDailyQuota() });
     }
     const to = String(data.to || '').trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return reponse({ ok: false, error: 'Adresse e-mail invalide' });
 
-    GmailApp.sendEmail(to, String(data.subject || '').slice(0, 200), String(data.text || ''), {
+    // MailApp ne demande que le droit d'ENVOYER des e-mails (pas de lecture ni de suppression de votre boîte).
+    MailApp.sendEmail({
+      to: to,
+      subject: String(data.subject || '').slice(0, 200),
+      body: String(data.text || ''),
       htmlBody: data.html || undefined,
       name: data.fromName || 'Alpes Désembouage'
     });
