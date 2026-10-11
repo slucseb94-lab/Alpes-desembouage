@@ -1,6 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
+  const APP_VERSION = '8 — devis intégrés';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -1467,7 +1468,7 @@
     let html = pageHead('Réglages', esc(S.user.full_name) + (S.user.email ? ' · ' + esc(S.user.email) : ''));
     html += '<div class="grid-2">';
     html += card('Application', '<div class="infos"><div class="info"><span>Mode</span><b>' + (S.mode === 'demo' ? 'Démo (données sur cet appareil uniquement)' : 'Connecté (Supabase)') + '</b></div>' +
-      '<div class="info"><span>Rôle</span><b>' + (S.isAdmin() ? 'Gérant' : 'Technicien') + '</b></div></div>' +
+      '<div class="info"><span>Rôle</span><b>' + (S.isAdmin() ? 'Gérant' : 'Technicien') + '</b></div><div class="info"><span>Version</span><b>' + APP_VERSION + '</b></div></div>' +
       '<div class="btn-row">' +
       (S.isAdmin() ? '<a class="btn btn-ghost" href="#/equipe">' + icon('team') + 'Équipe</a>' : '') +
       (S.mode === 'supabase' ? '<button class="btn btn-ghost" data-action="change-password">Changer mon mot de passe</button>' : '') +
@@ -2016,6 +2017,19 @@
       console.error(e);
       document.getElementById('app').innerHTML = '<div class="login"><div class="login-card"><h1>Erreur de démarrage</h1><p class="error">' + esc(e.message) + '</p></div></div>';
     }
-    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      // updateViaCache « none » : le téléphone vérifie toujours s'il existe une nouvelle version.
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+        reg.update().catch(() => {});
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+      }).catch(() => {});
+      // Nouvelle version installée : on recharge une fois, sauf si une fenêtre de saisie est ouverte.
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded || modal.open || location.hash.startsWith('#/devis')) return;
+        reloaded = true;
+        location.reload();
+      });
+    }
   })();
 })();
