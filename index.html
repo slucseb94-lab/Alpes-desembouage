@@ -85,7 +85,7 @@
         <a href="#boues">Les boues</a>
         <a href="#desembouage">Le désembouage</a>
         <a href="#societe">La société</a>
-        <a href="#contact" class="nav-cta">Contact</a>
+        <a href="#contact" class="nav-cta" data-track="nav_contact">Contact</a>
       </nav>
       <button class="burger" id="burger" aria-label="Menu">
         <span></span><span></span><span></span>
@@ -142,8 +142,8 @@
         <h1>Redonnez de la puissance<br>à votre chauffage</h1>
         <p class="hero-sub">10 ans d'expertise au service de la performance et de la longévité de vos installations. Jusqu'à 25% d'économie d'énergie après un désembouage.</p>
         <div class="hero-actions">
-          <a href="#contact" class="btn btn-primary">Demander un devis</a>
-          <a href="#desembouage" class="btn btn-ghost">Comprendre le désembouage</a>
+          <a href="#contact" class="btn btn-primary" data-track="devis_hero">Demander un devis</a>
+          <a href="#desembouage" class="btn btn-ghost" data-track="comprendre_hero">Comprendre le désembouage</a>
         </div>
       </div>
     </section>
@@ -378,7 +378,7 @@
           <h2>Un doute sur l'état de votre circuit ?</h2>
           <p>Diagnostic et devis gratuits, sans engagement. On vous répond sous 24h.</p>
         </div>
-        <a href="#contact" class="btn btn-primary">Demander mon devis gratuit</a>
+        <a href="#contact" class="btn btn-primary" data-track="devis_banner">Demander mon devis gratuit</a>
       </div>
     </section>
 
@@ -410,7 +410,7 @@
           </div>
         </div>
 
-        <a href="https://maps.app.goo.gl/sVYWGCqHb2V59HXk9" target="_blank" rel="noopener" class="btn btn-primary">Voir tous nos avis Google</a>
+        <a href="https://maps.app.goo.gl/sVYWGCqHb2V59HXk9" target="_blank" rel="noopener" class="btn btn-primary" data-track="avis_google">Voir tous nos avis Google</a>
       </div>
     </section>
 
@@ -469,7 +469,7 @@
 
   <div class="cookie-banner" id="cookie-banner" hidden>
     <div class="cookie-banner-inner">
-      <p>Nous utilisons des cookies de mesure d'audience (Google Analytics) pour comprendre comment les visiteurs utilisent le site. Vous pouvez accepter ou refuser.</p>
+      <p>Nous utilisons des outils de mesure d'audience (Google Analytics et statistiques internes) pour comprendre comment les visiteurs utilisent le site. Vous pouvez accepter ou refuser.</p>
       <div class="cookie-actions">
         <button type="button" class="btn btn-ghost-dark" id="cookie-decline">Refuser</button>
         <button type="button" class="btn btn-primary" id="cookie-accept">Accepter</button>
@@ -477,6 +477,7 @@
     </div>
   </div>
 
+  <script src="js/tracker.js"></script>
   <script src="js/script.js"></script>
 </body>
 </html>

@@ -115,6 +115,20 @@ CRM → **Réglages → Alerte nouveau prospect** → **Générer un sujet**, in
 s'abonner au sujet (bouton **+**), puis **Envoyer un test**. Chaque demande du formulaire du site déclenche
 ensuite une notification (avec seulement la ville, par discrétion).
 
+## Statistiques du site (onglet « Site web »)
+
+Le site envoie lui-même ses visites, clics (devis, téléphone, e-mail…), sections lues et formulaires dans Supabase.
+Aucun service externe : les chiffres sont à vous et apparaissent dans **CRM → Site web** (7 / 30 / 90 jours).
+
+1. Une seule fois : Supabase → **SQL Editor → New query**, coller `supabase/site-stats.sql`, **Run**.
+2. Le site (`js/tracker.js`) envoie ensuite les données tout seul après sa mise en ligne.
+3. Sur chaque fiche prospect venue du formulaire, une carte **Parcours sur le site** montre ce que la personne a fait avant de vous écrire.
+
+Respect de la vie privée : sans accord du visiteur (bandeau cookies), rien n'est identifiant, ce sont de simples compteurs.
+Seuls les visiteurs qui ont accepté peuvent être rattachés à une fiche prospect.
+Pour ne pas compter vos propres visites : ouvrir le site une fois avec `?notrack=1` à la fin de l'adresse (sur chaque appareil).
+Pour distinguer votre fiche Google Business de la recherche : mettre `?utm_source=fiche-google` au bout du lien du site dans la fiche.
+
 ## Installer sur le téléphone
 
 - **iPhone** : ouvrir l'adresse du CRM dans **Safari** → bouton Partager → « Sur l'écran d'accueil ».
@@ -140,5 +154,6 @@ crm/
 ├── js/store.js           lecture / écriture des données
 ├── js/app.js             écrans et fonctionnalités
 ├── icons/                icônes de l'application
-└── supabase/schema.sql   tables et règles de sécurité
+├── supabase/schema.sql   tables et règles de sécurité
+└── supabase/site-stats.sql   statistiques du site (onglet « Site web »)
 ```

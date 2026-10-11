@@ -361,7 +361,8 @@
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
     copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
-    card: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>'
+    card: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
+    chart: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'
   };
   const icon = (name, cls) => '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name] + '</svg>';
 
@@ -1267,6 +1268,136 @@
 
   const kpi = (label, value, href, sub) => '<a class="kpi" href="' + href + '"><span class="kpi-label">' + esc(label) + '</span><span class="kpi-value">' + esc(value) + '</span>' + (sub ? '<span class="kpi-sub">' + esc(sub) + '</span>' : '') + '</a>';
 
+  // ---------------------------------------------------------------- statistiques du site (suivi « maison », voir supabase/site-stats.sql)
+  const SECTION_ORDER = ['boues', 'desembouage', 'process', 'societe', 'avis', 'contact'];
+  const SECTION_LABELS = { boues: 'Les boues', desembouage: 'Le désembouage', process: 'Notre méthode', societe: 'La société', avis: 'Avis clients', contact: 'Contact' };
+  const CLICK_LABELS = {
+    devis_hero: 'Bouton « Demander un devis » (haut de page)', devis_banner: 'Bouton « Devis gratuit » (bandeau)', nav_contact: 'Menu « Contact »',
+    comprendre_hero: 'Bouton « Comprendre le désembouage »', avis_google: 'Bouton « Voir nos avis Google »',
+    tel_portable: 'Téléphone portable', tel_fixe: 'Téléphone fixe', email: 'E-mail'
+  };
+  const SOURCE_LABELS = { direct: 'Accès direct', google: 'Google (recherche, Maps)', 'fiche-google': 'Fiche Google', 'autre-moteur': 'Autres moteurs de recherche' };
+  const DEVICE_LABELS = { mobile: 'Téléphone', desktop: 'Ordinateur' };
+
+  function viewSite(params) {
+    const days = [7, 30, 90].includes(Number(params.get('d'))) ? Number(params.get('d')) : 30;
+    const chips = [7, 30, 90].map((d) => '<a class="chip' + (d === days ? ' on' : '') + '" href="#/site?d=' + d + '">' + d + ' jours</a>').join('');
+    return pageHead('Site web', 'Visites, clics et demandes de alpes-desembouage.fr') +
+      '<div class="chips site-period">' + chips + '</div>' +
+      '<div id="site-stats" data-days="' + days + '">' + empty('Chargement des statistiques…') + '</div>';
+  }
+
+  async function loadSiteStats(box) {
+    try {
+      const st = await S.siteStats(Number(box.dataset.days));
+      if (document.body.contains(box)) box.innerHTML = siteStatsHtml(st);
+    } catch (e) {
+      if (!document.body.contains(box)) return;
+      const missing = /site_stats|schema cache|does not exist/i.test(e.message);
+      box.innerHTML = '<section class="card"><p class="pad">' + (missing
+        ? 'Les statistiques ne sont pas encore activées : lancez une fois le fichier <b>supabase/site-stats.sql</b> dans Supabase (SQL Editor → New query → Run).'
+        : 'Impossible de charger les statistiques (' + esc(e.message) + ').') + '</p></section>';
+    }
+  }
+
+  function trendText(cur, prev) {
+    if (!prev) return '';
+    const p = Math.round(((cur - prev) / prev) * 100);
+    return (p > 0 ? '+' : p < 0 ? '−' : '') + Math.abs(p) + ' % sur la période précédente';
+  }
+
+  const siteKpi = (label, value, sub) => '<div class="kpi"><span class="kpi-label">' + esc(label) + '</span><span class="kpi-value">' + esc(value == null ? 0 : value) + '</span>' + (sub ? '<span class="kpi-sub">' + esc(sub) + '</span>' : '') + '</div>';
+
+  // Barres horizontales : base = valeur qui représente 100 % de la barre.
+  function barRows(rows, base, withPct) {
+    if (!rows.length) return empty('Pas encore de données.');
+    return '<div class="bars">' + rows.map(([label, n]) => {
+      const pct = base ? Math.min(100, Math.round((n / base) * 100)) : 0;
+      return '<div class="bar-row"><span class="bar-label">' + esc(label) + '</span><span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+        '<b class="bar-n">' + n + (withPct ? ' <small>' + pct + ' %</small>' : '') + '</b></div>';
+    }).join('') + '</div>';
+  }
+
+  function dailyChart(daily) {
+    if (!daily.length) return empty('Pas encore de données.');
+    const n = daily.length, W = 600, H = 150, gap = n > 45 ? 1 : 3;
+    const max = Math.max(1, ...daily.map((d) => d.visits));
+    const bw = W / n;
+    const bars = daily.map((d, i) => {
+      const h = Math.round((d.visits / max) * (H - 6));
+      const tip = fmtDate(d.day) + ' : ' + d.visits + ' visite' + (d.visits > 1 ? 's' : '') + (d.forms ? ', ' + d.forms + ' demande' + (d.forms > 1 ? 's' : '') : '');
+      return '<rect x="' + (i * bw + gap / 2).toFixed(1) + '" y="' + (H - h) + '" width="' + Math.max(1, bw - gap).toFixed(1) + '" height="' + h + '" rx="2" fill="' + (d.forms ? '#f0752c' : '#1c74c4') + '"><title>' + esc(tip) + '</title></rect>';
+    }).join('');
+    return '<div class="chart"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Visites par jour">' + bars + '</svg>' +
+      '<div class="chart-axis"><span>' + esc(fmtDate(daily[0].day)) + '</span><span>' + esc(fmtDate(daily[n - 1].day)) + '</span></div></div>';
+  }
+
+  function siteStatsHtml(st) {
+    const t = st.totals || {};
+    const named = (list, names) => (list || []).map((r) => [names[r.label] || r.label || '—', Number(r.n)]);
+    const sectionN = {};
+    (st.sections || []).forEach((r) => { sectionN[r.label] = Number(r.n); });
+    const funnel = SECTION_ORDER.map((k) => [SECTION_LABELS[k], sectionN[k] || 0])
+      .concat([['Formulaire commencé', t.form_starts || 0], ['Demande envoyée', t.form_submits || 0]]);
+    const clicks = named(st.clicks, CLICK_LABELS);
+    const sources = named(st.sources, SOURCE_LABELS);
+    const devices = named(st.devices, DEVICE_LABELS);
+    const devTotal = devices.reduce((s, d) => s + d[1], 0);
+    const conv = t.visits ? (Math.round((t.form_submits / t.visits) * 1000) / 10).toString().replace('.', ',') + ' % des visites' : '';
+
+    let html = st.demo ? '<p class="muted small pad">Données d’exemple (mode démo) : les vraies statistiques apparaissent une fois le CRM relié à Supabase.</p>' : '';
+    html += '<div class="kpis">' +
+      siteKpi('Visites', t.visits, trendText(t.visits, t.visits_prev)) +
+      siteKpi('Appels (clics sur le téléphone)', t.calls, trendText(t.calls, t.calls_prev)) +
+      siteKpi('Clics « Devis »', t.quote_clicks, trendText(t.quote_clicks, t.quote_clicks_prev)) +
+      siteKpi('Demandes envoyées', t.form_submits, conv) + '</div>';
+
+    html += '<div class="grid-2">';
+    html += '<div class="span-2">' + card('Visites par jour', dailyChart(st.daily || []) + '<p class="muted small pad">Barres orange : jours avec au moins une demande reçue.</p>') + '</div>';
+    html += card('Parcours des visiteurs', barRows(funnel, t.visits, true) + '<p class="muted small pad">Part des visites qui sont allées jusqu’à chaque étape.</p>');
+    html += card('Clics sur les boutons', barRows(clicks, Math.max(1, ...clicks.map((c) => c[1]))));
+    html += card('D’où viennent les visiteurs', barRows(sources, t.visits, true) +
+      (devTotal ? '<p class="muted small pad">' + devices.map((d) => esc(d[0]) + ' ' + Math.round((d[1] / devTotal) * 100) + ' %').join(' · ') + '</p>' : ''));
+    const leadSources = named(st.lead_sources, SOURCE_LABELS);
+    html += card('Prospects du formulaire', leadSources.length
+      ? barRows(leadSources, Math.max(1, ...leadSources.map((c) => c[1]))) + '<p class="muted small pad">Origine des prospects dont le parcours est connu. Le détail est sur chaque fiche client.</p>'
+      : empty('Aucun prospect avec un parcours connu sur cette période (il faut que le visiteur ait accepté les cookies).'));
+    html += '</div>';
+
+    html += '<p class="muted small pad">' + (t.identified || 0) + ' visites sur ' + (t.visits || 0) + ' viennent de visiteurs ayant accepté les cookies : seules celles-là peuvent être rattachées à une fiche prospect. ' +
+      'Pour ne pas compter vos propres visites, ouvrez une fois le site avec <b>?notrack=1</b> à la fin de l’adresse, sur chaque appareil. ' +
+      'Astuce : ajoutez <b>?utm_source=fiche-google</b> au lien du site dans votre fiche Google Business pour la distinguer de la recherche.</p>';
+    return html;
+  }
+
+  // Parcours d'un prospect avant sa demande (fiche client).
+  function visitTimeline(events) {
+    const COLORS = { visit: '#1c74c4', section: '#5a6472', click: '#f0752c', form_start: '#0e8a8a', form_submit: '#0e8a8a', video_play: '#7c5cc4' };
+    const describe = (e) => {
+      if (e.type === 'visit') return ['Arrivée sur le site', (SOURCE_LABELS[e.source] || e.source) + ' · ' + (e.device === 'mobile' ? 'sur téléphone' : 'sur ordinateur')];
+      if (e.type === 'section') return ['A consulté « ' + (SECTION_LABELS[e.label] || e.label) + ' »', ''];
+      if (e.type === 'click') return ['A cliqué : ' + (CLICK_LABELS[e.label] || e.label), ''];
+      if (e.type === 'form_start') return ['A commencé le formulaire', ''];
+      if (e.type === 'form_submit') return ['A envoyé sa demande', ''];
+      if (e.type === 'video_play') return ['A lancé la vidéo', ''];
+      return [e.type, ''];
+    };
+    return '<ol class="timeline">' + events.map((e) => {
+      const [title, subtitle] = describe(e);
+      return '<li style="--c:' + (COLORS[e.type] || '#5a6472') + '"><div class="tl-head"><b>' + esc(title) + '</b><span>' + esc(fmt(e.created_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
+        (subtitle ? '<p>' + esc(subtitle) + '</p>' : '') + '</li>';
+    }).join('') + '</ol>';
+  }
+
+  async function loadClientVisits(box) {
+    try {
+      const events = await S.clientVisits(box.dataset.client);
+      if (!events.length || !document.body.contains(box)) return;
+      box.innerHTML = card('Parcours sur le site', visitTimeline(events));
+      box.hidden = false;
+    } catch (e) { /* statistiques pas encore activées ou accès refusé : on n'affiche simplement rien */ }
+  }
+
   function viewAgenda(params) {
     const start = params.get('w') ? startOfWeek(parseYmd(params.get('w'))) : startOfWeek(new Date());
     const techFilter = params.get('t') || '';
@@ -1376,6 +1507,8 @@
     html += card('Paiements' + (pays.some((p) => p.status === 'paye') ? ' <span class="muted small">· ' + esc(fmtMoney2(paidTotal(id))) + ' reçus</span>' : ''),
       pays.length ? paymentsList(pays) : empty('Aucun paiement enregistré.'),
       '<button class="btn btn-ghost btn-sm" data-action="collect" data-client="' + c.id + '">' + icon('card') + 'Encaisser</button>');
+
+    if (S.isAdmin()) html += '<div class="span-2" id="client-visits" data-client="' + c.id + '" hidden></div>';
 
     html += '<section class="card span-2"><header class="card-head"><h3>Historique</h3></header>' +
       '<form class="note-form" data-client="' + c.id + '"><select name="type">' +
@@ -1577,6 +1710,7 @@
       else if (section === 'pipeline' && S.isAdmin()) html = viewPipeline();
       else if (section === 'rdv' && parts[1]) html = viewAppointment(parts[1]);
       else if (section === 'devis') html = viewQuoteEditor(parts[1] === 'nouveau' ? null : parts[1], params);
+      else if (section === 'site' && S.isAdmin()) html = viewSite(params);
       else if (section === 'equipe') html = viewTeam();
       else if (section === 'demo-paiement' && parts[1] && S.mode === 'demo') html = viewDemoCheckout(parts[1]);
       else if (section === 'reglages') html = viewSettings();
@@ -1592,7 +1726,7 @@
     window.scrollTo(0, sameRoute ? scroll : 0);
     document.querySelectorAll('.nav a').forEach((a) => {
       const target = a.getAttribute('href').slice(2).split('/')[0];
-      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'equipe', 'reglages', 'rdv', 'devis'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis'));
+      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'site', 'equipe', 'reglages', 'rdv', 'devis'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis'));
     });
     bindView();
   }
@@ -1600,7 +1734,7 @@
   function renderShell() {
     const admin = S.isAdmin();
     const items = [['', 'home', 'Accueil'], ['agenda', 'calendar', 'Agenda'], ['clients', 'users', 'Clients']];
-    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['equipe', 'team', 'Équipe']);
+    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['site', 'chart', 'Site web'], ['equipe', 'team', 'Équipe']);
     items.push(['reglages', 'settings', 'Réglages']);
     document.getElementById('app').innerHTML =
       '<aside class="sidebar"><div class="brand"><img src="icons/icon.svg" alt=""><div><b>Alpes Désembouage</b><span>CRM</span></div></div>' +
@@ -1668,6 +1802,10 @@
   // ================================================================ interactions
   function bindView() {
     bindQuoteEditor();
+    const siteBox = $('#site-stats');
+    if (siteBox) loadSiteStats(siteBox);
+    const visitsBox = $('#client-visits');
+    if (visitsBox) loadClientVisits(visitsBox);
     const search = $('#client-search');
     if (search) {
       search.addEventListener('input', () => {

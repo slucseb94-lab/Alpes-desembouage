@@ -56,6 +56,7 @@ form.addEventListener('submit', async (e) => {
     ]);
 
     if (response.ok || crmOk) {
+      if (window.adTrack) window.adTrack('form_submit', 'contact', { phone: data.get('phone') || '', email: data.get('email') || '' });
       note.textContent = 'Message envoyé, merci ! Nous vous recontactons rapidement.';
       note.style.color = '#1d8a4c';
       form.reset();
@@ -78,6 +79,7 @@ function applyConsent(granted) {
   if (typeof gtag === 'function') {
     gtag('consent', 'update', { analytics_storage: granted ? 'granted' : 'denied' });
   }
+  document.dispatchEvent(new CustomEvent('ad:consent', { detail: { granted: granted } }));
 }
 
 if (consentChoice) {

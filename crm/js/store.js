@@ -300,6 +300,56 @@
     return data.arrayBuffer();
   };
 
+  // ---------------------------------------------------------------- statistiques du site (admin)
+  // Chiffres agrégés par la base (fonction site_stats, voir supabase/site-stats.sql).
+  Store.siteStats = async function (days) {
+    if (this.mode === 'demo') return demoSiteStats(days);
+    const { data, error } = await this.sb.rpc('site_stats', { p_days: days });
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  // Parcours d'un prospect sur le site (visiteur ayant accepté les cookies puis rempli le formulaire).
+  Store.clientVisits = async function (clientId) {
+    if (this.mode === 'demo') return [];
+    const { data, error } = await this.sb.from('site_events').select('*').eq('client_id', clientId).order('created_at').limit(200);
+    if (error) throw new Error(error.message);
+    return data || [];
+  };
+
+  // Données d'exemple pour le mode démo.
+  function demoSiteStats(days) {
+    const daily = [];
+    let visits = 0, clicks = 0, forms = 0;
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const weekend = d.getDay() === 0 || d.getDay() === 6;
+      const v = 7 + ((i * 7 + 3) % 9) + (weekend ? -3 : 2);
+      const c = Math.round(v * 0.35), f = i % 6 === 0 ? 1 : 0;
+      daily.push({ day: d.toISOString().slice(0, 10), visits: v, clicks: c, forms: f });
+      visits += v; clicks += c; forms += f;
+    }
+    const pct = (p) => Math.round(visits * p);
+    return {
+      demo: true,
+      days,
+      totals: {
+        visits, visits_prev: Math.round(visits * 0.86), identified: pct(0.55),
+        calls: Math.round(clicks * 0.45), calls_prev: Math.round(clicks * 0.4),
+        quote_clicks: Math.round(clicks * 0.4), quote_clicks_prev: Math.round(clicks * 0.35),
+        form_starts: forms + 3, form_submits: forms, form_submits_prev: Math.max(0, forms - 1),
+        video_plays: pct(0.12), linked_leads: Math.max(0, forms - 1)
+      },
+      daily,
+      sections: [['boues', 0.74], ['desembouage', 0.52], ['process', 0.38], ['societe', 0.27], ['avis', 0.2], ['contact', 0.16]].map(([label, p]) => ({ label, n: pct(p) })),
+      clicks: [['tel_portable', 0.1], ['devis_hero', 0.08], ['tel_fixe', 0.04], ['devis_banner', 0.03], ['nav_contact', 0.03], ['avis_google', 0.02]].map(([label, p]) => ({ label, n: Math.max(1, pct(p)) })),
+      sources: [['google', 0.52], ['direct', 0.28], ['fiche-google', 0.14], ['facebook', 0.06]].map(([label, p]) => ({ label, n: pct(p) })),
+      devices: [['mobile', 0.68], ['desktop', 0.32]].map(([label, p]) => ({ label, n: pct(p) })),
+      lead_sources: [{ label: 'google', n: Math.max(1, forms - 1) }]
+    };
+  }
+
   // Relit une ligne depuis la base (utilisé pour savoir si le client a payé).
   Store.refresh = async function (table, id) {
     let row;
