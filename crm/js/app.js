@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '12 — RDV confirmé et alertes de signature';
+  const APP_VERSION = '13 — modèles d’e-mail des devis';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -356,9 +356,63 @@
 
   const emailSignatureHtml = () => (emailCfg().signature_html != null ? emailCfg().signature_html : defaultSignatureHtml());
 
+  // ---------------------------------------------------------------- modèles d'e-mail pour l'envoi d'un devis
+  const DEFAULT_QUOTE_EMAILS = {
+    sans_rdv: 'Bonjour,\n\nVous trouverez ci-joint le devis pour le désembouage complet de votre circuit de chauffage, comprenant {elements}.\n\n{lien}\n\n' +
+      'Si vous souhaitez donner suite, nous pourrons convenir d\'un rendez-vous ; il vous suffira de nous retourner le devis signé pour valider l\'intervention.\n\n' +
+      'Je reste à votre disposition pour toute question.\n\nBien cordialement,\nSébastien Tilliet',
+    rdv: 'Bonjour,\n\nVous trouverez ci-joint le devis pour le désembouage complet de votre circuit de chauffage, comprenant {elements}.\n\n{lien}\n\n' +
+      'Merci de me le retourner signé, ou de me confirmer par mail.\n\nRendez-vous confirmé {rdv}.\n\n' +
+      'Je reste à votre disposition pour toute question.\n\nBien cordialement,\nSébastien Tilliet'
+  };
+  const quoteEmailTexts = () => Object.assign({}, DEFAULT_QUOTE_EMAILS, S.data.settings.quote_email_templates || {});
+
+  // « 9 radiateurs », « 7 boucles de plancher chauffant »… déduit des lignes du devis (ou de la fiche client)
+  function quoteElements(q, c) {
+    const lines = Array.isArray(q.lines) ? q.lines : [];
+    const all = lines.map((l) => String(l.label || '')).join(' ').toLowerCase();
+    const kind = /radiateurs\s*\/\s*boucles|radiateurs et boucles/.test(all) ? 'mixte' : /boucle|chauffage au sol|plancher/.test(all) ? 'plancher' : 'radiateurs';
+    let n = 0;
+    lines.forEach((l) => {
+      const m = String(l.label || '').match(/inclus\s+(\d+)/i);
+      if (m) n += Number(m[1]) * (Number(l.qty) || 1);
+      else if (/suppl/i.test(l.label || '')) n += Number(l.qty) || 0;
+    });
+    if (!n) n = Number(c.radiators_count) || 0;
+    const word = { radiateurs: ['radiateur', 'radiateurs'], plancher: ['boucle de plancher chauffant', 'boucles de plancher chauffant'], mixte: ['radiateur et boucle de plancher chauffant', 'radiateurs et boucles de plancher chauffant'] }[kind];
+    return n ? n + ' ' + (n > 1 ? word[1] : word[0]) : word[1];
+  }
+
+  // « le jeudi 4 septembre entre 8h et 8h15 » : prochain rendez-vous prévu du client
+  function nextRdvText(c) {
+    const a = S.data.appointments.filter((x) => x.client_id === c.id && !['annule', 'termine'].includes(x.status) && new Date(x.start_at) > new Date())
+      .sort((x, y) => x.start_at.localeCompare(y.start_at))[0];
+    if (!a) return { text: 'le … entre … et …', found: false };
+    const d = new Date(a.start_at), h = (x) => x.getHours() + 'h' + (x.getMinutes() ? pad(x.getMinutes()) : '');
+    return { text: 'le ' + d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) + ' entre ' + h(d) + ' et ' + h(new Date(d.getTime() + 15 * 60000)), found: true };
+  }
+
+  function fillQuoteEmail(tpl, q, c, rdv) {
+    const vars = { nom: c.name, elements: quoteElements(q, c), rdv: rdv.text, reference: q.reference || '', montant: fmtMoney2(q.amount), lien: signUrl(q) };
+    let text = tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+    // Pas de {lien} dans le modèle : on place les boutons après le premier paragraphe
+    if (!text.includes(signUrl(q))) { const parts = text.split('\n\n'); parts.splice(Math.min(2, parts.length), 0, signUrl(q)); text = parts.join('\n\n'); }
+    return text;
+  }
+
+  function quoteEmailTemplates(q, c) {
+    const t = quoteEmailTexts(), rdv = nextRdvText(c);
+    return [
+      { key: 'sans_rdv', label: 'Sans rendez-vous', text: fillQuoteEmail(t.sans_rdv, q, c, rdv) },
+      { key: 'rdv', label: 'Rendez-vous confirmé', text: fillQuoteEmail(t.rdv, q, c, rdv), preferred: rdv.found }
+    ];
+  }
+
   function emailSheet(c, opts) {
     if (!c.email) { toast("Aucune adresse e-mail sur cette fiche.", true); return; }
-    const text0 = opts.text || ('Bonjour ' + c.name + ',\n\n' + emailSignature().trim());
+    const tpls = opts.templates || [];
+    const chosen = tpls.find((t) => t.preferred) || tpls[0];
+    const text0 = chosen ? chosen.text : opts.text || ('Bonjour ' + c.name + ',\n\n' + emailSignature().trim());
     if (!emailReady()) {
       openSheet('E-mail à ' + c.name,
         '<p class="muted">L\'envoi direct depuis le CRM n\'est pas encore réglé' + (S.isAdmin() ? ' (Réglages → Envoi des e-mails)' : '') + '. En attendant, l\'e-mail s\'ouvre dans votre messagerie.</p>' +
@@ -370,13 +424,19 @@
       '<div class="form-grid">' +
       '<label class="field"><span>À</span><input value="' + esc(c.email) + '" disabled></label>' +
       '<label class="field"><span>Objet</span><input id="mail-subject" value="' + esc(opts.subject || '') + '"></label>' +
-      '<label class="field"><span>Message</span><textarea id="mail-text" rows="10">' + esc(text0) + '</textarea></label>' +
+      (tpls.length > 1 ? '<div class="field"><span>Modèle de message</span><div class="seg-btns">' +
+        tpls.map((t, i) => '<button type="button" class="chip' + (t === chosen ? ' on' : '') + '" data-tpl="' + i + '">' + esc(t.label) + '</button>').join('') + '</div></div>' : '') +
+      '<label class="field"><span>Message</span><textarea id="mail-text" rows="12">' + esc(text0) + '</textarea></label>' +
       '<p class="muted small" style="grid-column:1/-1">' +
       (opts.link ? 'Le lien apparaîtra sous forme de bouton' + ((opts.buttons || []).length > 1 ? 's' : '') + ' ' +
         (opts.buttons || [{ label: opts.linkLabel || 'Ouvrir' }]).map((b) => '« ' + esc(b.label) + ' »').join(' et ') + '. ' : '') +
       'Votre signature est ajoutée automatiquement en bas de l\'e-mail.</p>' +
       '</div><div class="pay-actions"><button class="btn btn-primary btn-lg" data-m="send">' + icon('mail') + 'Envoyer</button></div>',
       (root) => {
+        root.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => {
+          $('#mail-text', root).value = tpls[Number(b.dataset.tpl)].text;
+          root.querySelectorAll('[data-tpl]').forEach((x) => x.classList.toggle('on', x === b));
+        }));
         const btn = $('[data-m=send]', root);
         btn.addEventListener('click', async () => {
           const subject = $('#mail-subject', root).value.trim(), text = $('#mail-text', root).value;
@@ -743,9 +803,7 @@
       on('log-sms', () => logActivity(q.client_id, 'sms', 'Lien de signature du devis ' + (q.reference || '') + ' envoyé par SMS').catch(() => {}));
       on('email', () => emailSheet(c, {
         subject: 'Votre devis ' + (q.reference || '') + ' — ' + company().name,
-        text: 'Bonjour ' + c.name + ',\n\nVeuillez trouver ci-dessous votre devis ' + (q.reference || '') + ' d\'un montant de ' + fmtMoney2(q.amount) + ' TTC' +
-          (q.with_cgv ? ', accompagné de nos conditions générales de vente' : '') + '.\n\nVous pouvez le consulter et le signer en ligne, depuis votre téléphone ou votre ordinateur :\n\n' +
-          signUrl(q) + '\n\nJe reste à votre disposition pour toute question.' + emailSignature(),
+        templates: quoteEmailTemplates(q, c),
         link: signUrl(q),
         buttons: [{ url: signUrl(q) + '&voir=1', label: 'Consulter le devis', style: 'ghost' }, { url: signUrl(q) + '#signature', label: 'Signer le devis' }],
         logText: 'Lien de signature du devis ' + (q.reference || '') + ' envoyé par e-mail'
@@ -1734,6 +1792,14 @@
         (emailReady() ? '<button type="button" class="btn btn-ghost" data-action="test-email">Tester</button>' : '') +
         '<button class="btn btn-primary" type="submit">Enregistrer</button></div></form></section>';
 
+      // Modèles d'e-mail proposés à l'envoi d'un devis
+      const qm = quoteEmailTexts();
+      html += '<section class="card"><header class="card-head"><h3>E-mails d\'envoi des devis</h3></header><form class="settings-form" data-kind="qmail">' +
+        '<p class="muted small">Deux modèles au choix lors de l\'envoi d\'un devis par e-mail. Variables : {elements} (ex. « 9 radiateurs »), {rdv} (date et heure du prochain rendez-vous), {lien} (emplacement des boutons Consulter / Signer), {nom}, {reference}, {montant}.</p>' +
+        fieldHtml({ name: 'sans_rdv', label: 'Sans rendez-vous', type: 'textarea', rows: 9 }, qm.sans_rdv) +
+        fieldHtml({ name: 'rdv', label: 'Rendez-vous confirmé', type: 'textarea', rows: 9 }, qm.rdv) +
+        '<div class="form-actions"><button class="btn btn-ghost" type="button" data-action="qmail-reset">Textes par défaut</button><button class="btn btn-primary" type="submit">Enregistrer</button></div></form></section>';
+
       // Signature ajoutée en bas de chaque e-mail
       html += '<section class="card"><header class="card-head"><h3>Signature des e-mails</h3></header><div class="pad">' +
         '<p class="muted small">Pour reprendre votre signature Gmail : dans Gmail, <b>Paramètres → Voir tous les paramètres → Signature</b>, sélectionnez-la entièrement, copiez (Ctrl + C), puis collez-la dans le cadre ci-dessous (Ctrl + V). La mise en forme et le logo sont conservés.</p>' +
@@ -1942,7 +2008,7 @@
         out.validity_days = Math.max(1, parseInt(out.validity_days, 10) || 30);
         out.vat_rate = Number(String(out.vat_rate).replace(',', '.')) || 10;
       }
-      const key = { company: 'company', quote: 'company', bank: 'bank', sms: 'sms_templates', email: 'email', notify: 'notify' }[form.dataset.kind];
+      const key = { company: 'company', quote: 'company', bank: 'bank', sms: 'sms_templates', email: 'email', notify: 'notify', qmail: 'quote_email_templates' }[form.dataset.kind];
       // Les réglages « entreprise » et « mentions des devis » partagent le même enregistrement : on fusionne.
       if (key === 'company') Object.keys(out).forEach((k) => { if (out[k] === '' && form.elements[k] && form.elements[k].dataset.keepDefault) delete out[k]; });
       await guard(() => S.saveSetting(key, ['company', 'email'].includes(key) ? Object.assign({}, S.data.settings[key] || {}, out) : out));
@@ -2075,6 +2141,7 @@
       if (type === 'joint') toast(label + ' — noté');
       else askReminder(client(c.id), label + ' — noté. Quand le recontacter ?');
     },
+    'qmail-reset': async () => { await guard(() => S.saveSetting('quote_email_templates', {})); toast('Textes par défaut rétablis'); render(); },
     'sig-save': async () => {
       const html = sanitizeHtml($('#sig-editor').innerHTML);
       await guard(() => S.saveSetting('email', Object.assign({}, emailCfg(), { signature_html: html })));
