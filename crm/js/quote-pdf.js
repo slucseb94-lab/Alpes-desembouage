@@ -241,5 +241,5 @@
     return doc.save();
   }
 
-  window.QuotePdf = { computeTotals, build, round2 };
+  window.QuotePdf = { computeTotals, build, round2, logoPng };
 })();

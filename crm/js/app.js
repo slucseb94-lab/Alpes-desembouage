@@ -1,13 +1,14 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '10 — signature e-mail';
+  const APP_VERSION = '12 — RDV confirmé et alertes de signature';
 
   // ================================================================ référentiels
   const STATUS = {
     nouveau: { label: 'Nouveau prospect', color: '#1c74c4' },
     contacte: { label: 'Contacté', color: '#7c5cc4' },
     devis: { label: 'Devis envoyé', color: '#e0691f' },
+    rdv: { label: 'RDV confirmé', color: '#0e8a8a' },
     client: { label: 'Client', color: '#1f9d55' },
     perdu: { label: 'Perdu', color: '#8a94a3' },
     indesirable: { label: 'Arnaque / robot', color: '#b3261e' }
@@ -205,6 +206,15 @@
     await S.update('clients', c.id, patch);
     await logActivity(c.id, 'statut', 'Statut : ' + from + ' → ' + STATUS[status].label + (reason ? ' (' + reason + ')' : ''));
     return true;
+  }
+
+  // RDV annulé ou supprimé : si le client n'a plus aucun rendez-vous à venir, il revient à « Devis envoyé » (devis en attente) ou « Contacté »
+  async function revertRdvStatus(clientId) {
+    const c = client(clientId);
+    if (!c || c.status !== 'rdv') return;
+    const upcoming = S.data.appointments.some((a) => a.client_id === clientId && !['annule', 'termine'].includes(a.status) && new Date(a.start_at) > new Date());
+    const pendingQuote = S.data.quotes.some((q) => q.client_id === clientId && q.status === 'envoye');
+    if (!upcoming) await setClientStatus(c, pendingQuote ? 'devis' : 'contacte', 'plus de rendez-vous prévu');
   }
 
   // ---------------------------------------------------------------- motif de perte
@@ -586,18 +596,19 @@
       values: a || Object.assign({ type: 'visite', status: 'planifie', start_at: def.toISOString(), duration_min: 60, technician_id: S.user.id }, preset || {}),
       onSubmit: async (v) => {
         v.duration_min = Number(v.duration_min);
-        if (a) { await S.update('appointments', a.id, v); toast('Rendez-vous mis à jour'); }
+        if (a) { await S.update('appointments', a.id, v); toast('Rendez-vous mis à jour'); warnWithdrawal(v.client_id, v.start_at); }
         else {
           if (!v.technician_id) v.technician_id = S.user.id;
           const row = await S.insert('appointments', v);
           await logActivity(v.client_id, 'note', 'RDV planifié : ' + APPT_TYPES[v.type] + ' le ' + fmtDate(v.start_at) + ' à ' + fmtTime(v.start_at));
           const c = client(v.client_id);
-          if (c && c.status === 'nouveau') await setClientStatus(c, 'contacte', 'RDV planifié');
-          toast('Rendez-vous créé');
+          // Un rendez-vous planifié pour un prospect le fait passer en « RDV confirmé »
+          if (c && ['nouveau', 'contacte', 'devis'].includes(c.status)) await setClientStatus(c, 'rdv', 'RDV planifié le ' + fmtDate(v.start_at));
+          toast('Rendez-vous créé'); warnWithdrawal(v.client_id, v.start_at);
           location.hash = '#/rdv/' + row.id;
         }
       },
-      onDelete: a && S.isAdmin() ? async () => { await S.remove('appointments', a.id); toast('Rendez-vous supprimé'); location.hash = '#/agenda'; } : null
+      onDelete: a && S.isAdmin() ? async () => { await S.remove('appointments', a.id); await revertRdvStatus(a.client_id); toast('Rendez-vous supprimé'); location.hash = '#/agenda'; } : null
     });
   }
 
@@ -643,6 +654,22 @@
   }
   const pdfChanged = (before, after) => !before || before.doc_hash !== after.doc_hash;
 
+  // ---------------------------------------------------------------- délai de rétractation (14 jours après la signature)
+  function withdrawalFor(clientId) {
+    const q = S.data.quotes.filter((x) => x.client_id === clientId && x.sign_status === 'signe' && x.signed_at).sort((a, b) => b.signed_at.localeCompare(a.signed_at))[0];
+    if (!q) return null;
+    return { quote: q, deadline: new Date(new Date(q.signed_at).getTime() + 14 * 86400000), early: !!q.early_start };
+  }
+  // Rendez-vous prévu avant la fin du délai sans demande d'intervention anticipée du client
+  function withdrawalConflict(clientId, startIso) {
+    const w = withdrawalFor(clientId);
+    return w && !w.early && startIso && new Date(startIso) < w.deadline ? w : null;
+  }
+  function warnWithdrawal(clientId, startIso) {
+    const w = withdrawalConflict(clientId, startIso);
+    if (w) setTimeout(() => toast('Attention : le client peut encore se rétracter jusqu’au ' + fmtDate(w.deadline.toISOString()) + ' et n’a pas demandé d’intervention anticipée.', true), 2700);
+  }
+
   // ---------------------------------------------------------------- signature électronique
   const signUrl = (q) => location.origin + location.pathname.replace(/index\.html$/, '') + 'signer.html?t=' + q.sign_token;
 
@@ -672,6 +699,8 @@
 
     if (q.sign_status === 'signe') {
       body += '<div class="pay-done">✓ Signé par ' + esc(q.signer_name) + ' le ' + esc(fmt(q.signed_at, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</div>' +
+        (function () { const w = withdrawalFor(q.client_id); const d = new Date(new Date(q.signed_at).getTime() + 14 * 86400000);
+          return '<p class="center small">Rétractation possible jusqu’au <b>' + esc(fmtDate(d.toISOString())) + '</b> · intervention anticipée : <b>' + (q.early_start ? 'demandée' : 'non demandée') + '</b></p>'; })() +
         '<div class="pay-actions"><button class="btn btn-primary" data-q="signed">Télécharger le devis signé (PDF)</button></div>';
     } else if (!q.pdf_path && Array.isArray(q.lines)) {
       body += '<p class="muted center">Brouillon : vérifiez le contenu puis validez-le pour l\'envoyer au client.</p>' +
@@ -1603,6 +1632,8 @@
     let html = pageHead(esc(APPT_TYPES[a.type]), esc(when.charAt(0).toUpperCase() + when.slice(1)),
       S.isAdmin() ? '<button class="btn btn-ghost" data-action="edit-appt" data-appt="' + a.id + '">' + icon('edit') + '<span class="hide-sm">Modifier</span></button>' : '', '#/agenda?w=' + ymd(startOfWeek(new Date(a.start_at))));
     html += '<div class="status-bar">' + badge(APPT_STATUS, a.status) + (tech ? '<span class="muted small">Technicien : ' + esc(tech.full_name) + '</span>' : '') + '</div>';
+    const wc = withdrawalConflict(a.client_id, a.start_at);
+    if (wc && !['termine', 'annule'].includes(a.status)) html += '<p class="dup-warn" style="margin:-4px 0 14px">Délai de rétractation : le client peut se rétracter jusqu’au <b>' + esc(fmtDate(wc.deadline.toISOString())) + '</b> et n’a pas demandé d’intervention anticipée. Décalez le rendez-vous après cette date, ou faites-lui confirmer par écrit qu’il souhaite une intervention plus tôt.</p>';
 
     if (steps.length) {
       html += '<div class="steps">' + steps.map(([st, label, tpl], i) =>
@@ -1678,6 +1709,11 @@
         f('iban', 'IBAN (pied de page)', { half: true }) + f('vat_rate', 'Taux de TVA (%)', { half: true, inputmode: 'decimal' }) +
         f('validity_days', 'Validité des devis (jours)', { half: true, inputmode: 'numeric' }) + f('payment_terms', 'Conditions de paiement', { half: true }) +
         f('vat_mention', 'Mention TVA réduite', { type: 'textarea', rows: 3 }) + f('extra_mention', 'Autre mention', { type: 'textarea', rows: 2 }) +
+        '<h4 class="form-section">Assurance et médiation (utilisées dans les CGV)</h4>' +
+        f('insurance_zone', 'Zone géographique couverte par l\'assurance', { half: true, placeholder: 'ex. France métropolitaine' }) +
+        f('mediator_name', 'Médiateur de la consommation (nom)', { half: true, placeholder: 'ex. CM2C' }) +
+        f('mediator_url', 'Site internet du médiateur', { half: true, placeholder: 'https://…' }) +
+        f('mediator_address', 'Adresse postale du médiateur', { half: true }) +
         '</div><div class="form-actions"><button class="btn btn-primary" type="submit">Enregistrer les mentions</button></div></form></section>';
 
       // Catalogue des prestations
@@ -1724,6 +1760,9 @@
           : '<p class="muted">Déposez vos CGV en PDF : elles seront ajoutées à la suite du devis et signées avec lui.</p>') +
         '<div class="btn-row" style="padding:8px 0 0"><label class="btn btn-ghost">' + (cgv.path ? 'Remplacer le PDF' : 'Déposer le PDF des CGV') + '<input type="file" accept="application/pdf" id="cgv-file" hidden></label>' +
         (cgv.path ? '<button class="btn btn-ghost" data-action="view-cgv">Voir</button>' : '') + '</div>' +
+        '<div class="cgv-gen"><b>Modèle à jour « ' + esc(co.name) + ' »</b><p class="muted small">CGV complètes rédigées pour vos prestations (rétractation de 14 jours et formulaire, médiation, protection en cas de pannes ou de défauts révélés par le désembouage, clients professionnels…), reprenant vos coordonnées des « Mentions des devis ». À faire relire par un professionnel du droit avant usage.</p>' +
+        (co.mediator_name ? '' : '<p class="dup-warn">Médiateur de la consommation non renseigné (obligatoire pour les clients particuliers) : complétez-le dans « Mentions des devis » puis régénérez les CGV.</p>') +
+        '<div class="btn-row" style="padding:8px 0 0"><button class="btn btn-ghost" data-action="cgv-preview">Aperçu / télécharger</button><button class="btn btn-primary" data-action="cgv-generate">Utiliser ce modèle comme CGV</button></div></div>' +
         '<p class="muted small">Les devis déjà signés gardent la version des CGV en vigueur au moment de la signature.</p></div>');
 
       html += card('Paiement par carte','<div class="infos"><div class="info"><span>Prestataire</span><b>Stripe</b></div><div class="info"><span>État</span><b>' +
@@ -1978,6 +2017,7 @@
           if (SERVICE_TYPES.includes(a.type) || a.type === 'sav') await setClientStatus(client(c.id), 'client', 'intervention réalisée');
         } else if (to === 'annule' && c) {
           await logActivity(c.id, 'note', 'RDV du ' + fmtDate(a.start_at) + ' annulé');
+          await revertRdvStatus(c.id);
         }
       });
       toast('Statut : ' + APPT_STATUS[to].label);
@@ -2130,6 +2170,28 @@
         if (!r.ok) throw new Error();
         toast('Notification envoyée : vérifiez votre téléphone');
       } catch (e) { toast("Envoi de la notification impossible.", true); }
+    },
+    'cgv-preview': async (el) => {
+      el.disabled = true;
+      try {
+        const bytes = await guard(async () => window.CgvPdf.build(company(), await QuotePdf.logoPng()));
+        window.SignedPdf.download(bytes, 'CGV-' + company().name.replace(/[^\w]+/g, '-') + '.pdf');
+      } catch (e) { /* déjà signalé */ }
+      el.disabled = false;
+    },
+    'cgv-generate': async (el) => {
+      if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : remplacer les CGV actuelles ?'; return; }
+      el.disabled = true; el.textContent = 'Génération…';
+      try {
+        await guard(async () => {
+          const bytes = await window.CgvPdf.build(company(), await QuotePdf.logoPng());
+          const name = 'CGV ' + company().name + ' (' + new Date().toLocaleDateString('fr-FR') + ').pdf';
+          const path = await S.uploadCgv(new File([bytes], name, { type: 'application/pdf' }));
+          await S.saveSetting('cgv', { path, name, uploaded_at: new Date().toISOString(), generated: true });
+        });
+        toast('CGV à jour enregistrées : elles seront jointes aux prochains devis');
+        render();
+      } catch (e) { el.disabled = false; el.textContent = 'Utiliser ce modèle comme CGV'; }
     },
     'view-cgv': async () => {
       const bytes = await guard(() => S.getQuotePdf(S.data.settings.cgv.path));

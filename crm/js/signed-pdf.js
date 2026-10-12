@@ -61,7 +61,11 @@
       ['Date et heure', whenText + ' (heure de Paris)'],
       ['Adresse IP', info.signer_ip || 'non disponible'],
       ['Appareil', info.signer_user_agent || 'non disponible'],
-      ['Empreinte du devis (SHA-256)', info.doc_hash || '']
+      ['Empreinte du devis (SHA-256)', info.doc_hash || ''],
+      ['Délai de rétractation', 'Jusqu\'au ' + new Date(when.getTime() + 14 * 86400000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) + ' (14 jours, clients consommateurs)'],
+      ['Intervention anticipée', info.early_start
+        ? 'Demandée expressément par le client, qui reconnaît perdre son droit de rétractation une fois la prestation entièrement exécutée'
+        : 'Non demandée : intervention après la fin du délai de rétractation']
     ];
     rows.forEach(([label, value]) => {
       text(label, { size: 9, font: bold, color: gray });

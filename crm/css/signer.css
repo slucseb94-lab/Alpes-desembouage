@@ -36,3 +36,7 @@ main { max-width: 760px; margin: 0 auto; padding: 20px 16px calc(40px + env(safe
 .error { background: #fdf3f2; color: var(--danger); padding: 10px 12px; border-radius: 8px; font-size: 14px; margin: 0; }
 .fine { font-size: 12px; color: var(--muted); margin: 0; text-align: center; }
 [hidden] { display: none !important; }
+.retract { background: #f3f6fa; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.retract b { color: var(--blue-900); }
+.retract p { margin: 0; color: var(--muted); }
+.retract .check-line { font-size: 14px; }

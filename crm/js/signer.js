@@ -51,7 +51,7 @@
       if (!q || q.sign_status !== 'envoye') throw new Error('Lien de signature invalide ou devis déjà signé');
       if (payload.p_doc_hash !== q.doc_hash) throw new Error('Le devis a été modifié entre-temps : rechargez la page');
       const now = new Date().toISOString();
-      Object.assign(q, { sign_status: 'signe', signed_at: now, signer_name: payload.p_name.trim(), signature_image: payload.p_signature, signer_ip: '(démo)', signer_user_agent: navigator.userAgent, status: 'accepte' });
+      Object.assign(q, { sign_status: 'signe', signed_at: now, signer_name: payload.p_name.trim(), signature_image: payload.p_signature, signer_ip: '(démo)', signer_user_agent: navigator.userAgent, status: 'accepte', early_start: !!payload.p_early_start });
       const c = db.clients.find((x) => x.id === q.client_id);
       if (c) c.status = 'client';
       db.activities.push({ id: 'act-' + Date.now(), created_at: now, client_id: q.client_id, user_id: null, type: 'statut', content: 'Devis ' + (q.reference || '') + ' signé électroniquement par ' + payload.p_name.trim() + ' — statut : Client' });
@@ -156,6 +156,9 @@
       '<h2>Signature</h2>' +
       '<label class="field"><span>Nom et prénom du signataire</span><input name="name" required autocomplete="name" value="' + esc(info.client_name || '') + '"></label>' +
       '<label class="check-line"><input type="checkbox" name="consent" required><span>' + (info.with_cgv ? 'J\'ai lu le devis et les conditions générales de vente, et je les accepte sans réserve.' : 'J\'ai lu le devis et je l\'accepte sans réserve.') + ' <b>Bon pour accord.</b></span></label>' +
+      '<div class="retract"><b>Délai de rétractation</b><p>Vous disposez de 14 jours après la signature pour vous rétracter, sans frais' +
+        (info.with_cgv ? ' (formulaire en annexe des conditions générales de vente)' : '') + '. Sans demande de votre part, l\'intervention aura lieu après ce délai.</p>' +
+        '<label class="check-line"><input type="checkbox" name="early_start"><span>Je demande expressément que l\'intervention puisse avoir lieu <b>avant la fin du délai de rétractation</b>, et je reconnais perdre mon droit de rétractation une fois la prestation entièrement exécutée.</span></label></div>' +
       '<div class="pad-head"><span>Signez avec votre doigt dans le cadre</span><button type="button" class="link" id="clear">Effacer</button></div>' +
       '<canvas class="pad" id="pad"></canvas>' +
       '<p class="error" id="err" hidden></p>' +
@@ -210,9 +213,10 @@
       try {
         const name = form.elements.name.value.trim();
         const signature = pad.toPng();
-        const res = await api.sign({ p_token: token, p_name: name, p_signature: signature, p_doc_hash: hash, p_consent: true });
+        const early = form.elements.early_start.checked;
+        const res = await api.sign({ p_token: token, p_name: name, p_signature: signature, p_doc_hash: hash, p_consent: true, p_early_start: early });
         signedView(Object.assign({}, info, {
-          signer_name: name, signed_at: res.signed_at, signer_ip: res.signer_ip, signature_image: signature, signer_user_agent: navigator.userAgent
+          signer_name: name, signed_at: res.signed_at, signer_ip: res.signer_ip, signature_image: signature, signer_user_agent: navigator.userAgent, early_start: early
         }));
         window.scrollTo(0, 0);
       } catch (e2) {
