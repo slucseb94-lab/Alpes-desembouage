@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '13 — modèles d’e-mail des devis';
+  const APP_VERSION = '14 — modèles d’e-mail des devis';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -362,7 +362,8 @@
       'Si vous souhaitez donner suite, nous pourrons convenir d\'un rendez-vous ; il vous suffira de nous retourner le devis signé pour valider l\'intervention.\n\n' +
       'Je reste à votre disposition pour toute question.\n\nBien cordialement,\nSébastien Tilliet',
     rdv: 'Bonjour,\n\nVous trouverez ci-joint le devis pour le désembouage complet de votre circuit de chauffage, comprenant {elements}.\n\n{lien}\n\n' +
-      'Merci de me le retourner signé, ou de me confirmer par mail.\n\nRendez-vous confirmé {rdv}.\n\n' +
+      'Pour valider l\'intervention, il vous suffit de me retourner le devis signé : vous pouvez le faire en ligne en quelques secondes, grâce au bouton « Signer le devis » ci-dessus.\n\n' +
+      'Pour rappel, votre rendez-vous est prévu {rdv}.\n\n' +
       'Je reste à votre disposition pour toute question.\n\nBien cordialement,\nSébastien Tilliet'
   };
   const quoteEmailTexts = () => Object.assign({}, DEFAULT_QUOTE_EMAILS, S.data.settings.quote_email_templates || {});
