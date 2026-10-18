@@ -43,14 +43,18 @@ function doPost(e) {
     const to = String(data.to || '').trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return reponse({ ok: false, error: 'Adresse e-mail invalide' });
     // MailApp ne demande que le droit d'ENVOYER des e-mails (pas de lecture ni de suppression de votre boîte).
+    // Pièces jointes éventuelles (PDF des factures), transmises encodées en base64
+    const attachments = (data.attachments || []).slice(0, 5).map((a) =>
+      Utilities.newBlob(Utilities.base64Decode(a.base64), a.type || 'application/pdf', String(a.name || 'document.pdf')));
     MailApp.sendEmail({
       to: to,
       subject: String(data.subject || '').slice(0, 200),
       body: String(data.text || ''),
       htmlBody: data.html || undefined,
-      name: data.fromName || 'Alpes Désembouage'
+      name: data.fromName || 'Alpes Désembouage',
+      attachments: attachments
     });
-    return reponse({ ok: true, quota: MailApp.getRemainingDailyQuota() });
+    return reponse({ ok: true, quota: MailApp.getRemainingDailyQuota(), attachments: attachments.length });
   } catch (err) {
     return reponse({ ok: false, error: String(err && err.message || err) });
   }

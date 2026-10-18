@@ -1,7 +1,7 @@
 // Couche de données : même interface en mode démo (localStorage) et en mode réel (Supabase).
 (function () {
   const cfg = window.CRM_CONFIG || {};
-  const TABLES = ['profiles', 'clients', 'activities', 'quotes', 'appointments', 'payments'];
+  const TABLES = ['profiles', 'clients', 'activities', 'quotes', 'appointments', 'payments', 'invoices'];
   const DEMO_KEY = 'crm-demo-v1';
   const DEMO_USER_KEY = 'crm-demo-user';
 
@@ -15,7 +15,7 @@
     sb: null,
     user: null,
     needPassword: false,
-    data: { profiles: [], clients: [], activities: [], quotes: [], appointments: [], payments: [], settings: {} },
+    data: { profiles: [], clients: [], activities: [], quotes: [], appointments: [], payments: [], invoices: [], settings: {} },
     isAdmin() { return !!this.user && this.user.role === 'admin'; }
   };
 
@@ -26,15 +26,16 @@
     try { demoDb = JSON.parse(lsGet(DEMO_KEY)); } catch (e) { demoDb = null; }
     if (!demoDb || !demoDb.clients) { demoDb = seed(); demoSave(); }
     if (!demoDb.payments) { demoDb.payments = []; demoSave(); }
+    if (!demoDb.invoices) { demoDb.invoices = []; demoSave(); }
   }
   function demoSave() { lsSet(DEMO_KEY, JSON.stringify(demoDb)); }
 
   // Reproduit en local les règles d'accès appliquées par Supabase (voir supabase/schema.sql).
   function demoVisible() {
     const db = demoDb, u = Store.user;
-    if (!u) return { profiles: db.profiles, clients: [], activities: [], quotes: [], appointments: [], payments: [] };
+    if (!u) return { profiles: db.profiles, clients: [], activities: [], quotes: [], appointments: [], payments: [], invoices: [] };
     if (u.role === 'admin') {
-      return { profiles: db.profiles, clients: db.clients, activities: db.activities, quotes: db.quotes, appointments: db.appointments, payments: db.payments };
+      return { profiles: db.profiles, clients: db.clients, activities: db.activities, quotes: db.quotes, appointments: db.appointments, payments: db.payments, invoices: db.invoices };
     }
     const appointments = db.appointments.filter((a) => a.technician_id === u.id);
     const apptIds = new Set(appointments.map((a) => a.id));
@@ -46,7 +47,8 @@
       activities: db.activities.filter((a) => ids.has(a.client_id)),
       quotes: [],
       appointments,
-      payments: db.payments.filter((p) => p.created_by === u.id || apptIds.has(p.appointment_id))
+      payments: db.payments.filter((p) => p.created_by === u.id || apptIds.has(p.appointment_id)),
+      invoices: []
     };
   }
 
@@ -217,6 +219,49 @@
     const { data, error } = await this.sb.rpc('next_quote_reference');
     if (error) throw new Error('Numérotation impossible : ' + error.message);
     return data;
+  };
+
+  // ---------------------------------------------------------------- factures et avoirs
+  // Émission : numéro suivant (FAC-AAAA-0001 / AV-AAAA-0001) attribué par la base, document figé ensuite.
+  Store.issueInvoice = async function (id) {
+    if (this.mode === 'demo') {
+      const inv = demoDb.invoices.find((x) => x.id === id);
+      if (!inv || inv.status !== 'brouillon') throw new Error('Cette facture est déjà émise');
+      const key = inv.kind === 'avoir' ? 'invoice_counter_avoir' : 'invoice_counter';
+      const n = (demoDb.settings[key] || 0) + 1;
+      demoDb.settings[key] = n;
+      const today = new Date().toISOString().slice(0, 10);
+      Object.assign(inv, {
+        number: (inv.kind === 'avoir' ? 'AV-' : 'FAC-') + today.slice(0, 4) + '-' + String(n).padStart(4, '0'),
+        status: inv.kind === 'facture' && inv.paid_at ? 'payee' : 'emise', issue_date: today, due_date: inv.due_date || today
+      });
+      if (inv.kind === 'avoir' && inv.ref_invoice_id) {
+        const f = demoDb.invoices.find((x) => x.id === inv.ref_invoice_id);
+        if (f && ['emise', 'payee'].includes(f.status) && Math.abs(Number(f.total_ttc) + Number(inv.total_ttc)) < 0.01) f.status = 'annulee';
+      }
+      demoSave();
+    } else {
+      const { error } = await this.sb.rpc('issue_invoice', { p_id: id });
+      if (error) throw new Error(error.message);
+    }
+    await this.loadAll();
+    return this.data.invoices.find((x) => x.id === id);
+  };
+
+  Store.getCounter = async function (key) {
+    if (this.mode === 'demo') return key === 'devis' ? (demoDb.settings.quote_counter || 240) : (demoDb.settings[key === 'avoir' ? 'invoice_counter_avoir' : 'invoice_counter'] || 0);
+    const { data, error } = await this.sb.rpc('get_counter', { p_key: key });
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  Store.setCounter = async function (key, n) {
+    if (this.mode === 'demo') {
+      if (key === 'devis') demoDb.settings.quote_counter = n; else demoDb.settings[key === 'avoir' ? 'invoice_counter_avoir' : 'invoice_counter'] = n;
+      demoSave(); return;
+    }
+    const { error } = await this.sb.rpc('set_counter', { p_key: key, p_value: n });
+    if (error) throw new Error(error.message);
   };
 
   Store.getQuoteCounter = async function () {

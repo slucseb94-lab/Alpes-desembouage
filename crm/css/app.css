@@ -68,7 +68,7 @@ main#view {
 .fab .ico { width: 26px; height: 26px; stroke-width: 2.5; }
 
 /* sur mobile, la barre du bas n'affiche pas « Équipe » (accessible via Réglages) */
-.nav a[href="#/equipe"] { display: none; }
+.nav a[href="#/equipe"], .nav a[href="#/factures"] { display: none; }
 
 @media (min-width: 900px) {
   .sidebar {
@@ -80,7 +80,7 @@ main#view {
   .brand b { display: block; font-family: var(--font-head); font-size: 14px; color: var(--blue-900); }
   .brand span { font-size: 12px; color: var(--muted); }
   .nav { flex-direction: column; height: auto; gap: 2px; }
-  .nav a, .nav a[href="#/equipe"] { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: flex; }
+  .nav a, .nav a[href="#/equipe"], .nav a[href="#/factures"] { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: flex; }
   .nav a:hover { background: var(--bg); }
   .nav a.on { background: var(--blue-50); }
   .demo-flag { display: block; margin-top: auto; padding: 8px 12px; border-radius: 8px; background: #fff4ec; color: #a8470f; font-size: 12px; font-weight: 600; text-align: center; }

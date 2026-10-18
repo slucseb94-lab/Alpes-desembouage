@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '16 — calendrier iPhone';
+  const APP_VERSION = '17 — factures';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -47,7 +47,7 @@
     demande: { label: 'Demande reçue (site)', color: '#0e8a8a' },
     statut: { label: 'Changement de statut', color: '#e0691f' }
   };
-  const SOURCES = ['Google / Fiche Google', 'Site internet', 'Bouche-à-oreille', 'Recommandation client', 'Partenaire / plombier', 'Réseaux sociaux', 'Autre'];
+  const SOURCES = ['Google / Fiche Google', 'Site internet', 'Facebook / Instagram (publicité)', 'Bouche-à-oreille', 'Recommandation client', 'Partenaire / plombier', 'Réseaux sociaux', 'Autre'];
   const HEATING = ['Gaz', 'Fioul', 'Pompe à chaleur', 'Bois / granulés', 'Électrique', 'Réseau de chaleur', 'Autre'];
   const EMITTERS = ['Radiateurs', 'Plancher chauffant', 'Mixte'];
   const DURATIONS = { 30: '30 min', 60: '1 h', 90: '1 h 30', 120: '2 h', 180: '3 h', 240: '4 h', 300: '5 h', 480: 'Journée' };
@@ -431,7 +431,8 @@
       '<p class="muted small" style="grid-column:1/-1">' +
       (opts.link ? 'Le lien apparaîtra sous forme de bouton' + ((opts.buttons || []).length > 1 ? 's' : '') + ' ' +
         (opts.buttons || [{ label: opts.linkLabel || 'Ouvrir' }]).map((b) => '« ' + esc(b.label) + ' »').join(' et ') + '. ' : '') +
-      'Votre signature est ajoutée automatiquement en bas de l\'e-mail.</p>' +
+      'Votre signature est ajoutée automatiquement en bas de l\'e-mail.' +
+      ((opts.attachments || []).length ? ' <b>Pièce jointe : ' + esc(opts.attachments.map((a) => a.name).join(', ')) + '</b>' : '') + '</p>' +
       '</div><div class="pay-actions"><button class="btn btn-primary btn-lg" data-m="send">' + icon('mail') + 'Envoyer</button></div>',
       (root) => {
         root.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => {
@@ -445,7 +446,10 @@
           btn.disabled = true; btn.textContent = 'Envoi…';
           try {
             const sigText = htmlToText(emailSignatureHtml());
-            await guard(() => callMailScript({ to: c.email, subject, text: text + (sigText ? '\n\n' + sigText : ''), html: emailHtml(text, opts), fromName: company().name }));
+            const r = await guard(() => callMailScript({ to: c.email, subject, text: text + (sigText ? '\n\n' + sigText : ''), html: emailHtml(text, opts), fromName: company().name, attachments: opts.attachments || [] }));
+            // Ancien script Google (sans gestion des pièces jointes) : l'e-mail part, mais sans le PDF
+            if ((opts.attachments || []).length && !(r && r.attachments > 0)) setTimeout(() => toast('E-mail envoyé SANS la pièce jointe : mettez à jour le script Google (voir le guide).', true), 2700);
+            if (opts.onSent) opts.onSent();
             await logActivity(c.id, 'email', opts.logText || ('E-mail envoyé : ' + subject));
             closeModal(); toast('E-mail envoyé à ' + c.email); render();
           } catch (e) { btn.disabled = false; btn.innerHTML = icon('mail') + 'Envoyer'; }
@@ -566,7 +570,8 @@
     pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
     copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     card: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
-    chart: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>'
+    chart: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
+    doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>'
   };
   const icon = (name, cls) => '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name] + '</svg>';
 
@@ -889,12 +894,14 @@
     body += '<div class="pay-admin">' + (q.pdf_path ? '<button class="btn btn-ghost btn-sm" data-q="pdf">Voir le PDF</button>' : '') +
       (q.pdf_path ? '<button class="btn btn-ghost btn-sm" data-action="q-download" data-quote="' + q.id + '">Télécharger</button>' : '') +
       (crm && q.sign_status !== 'signe' ? '<button class="btn btn-ghost btn-sm" data-q="content">' + icon('edit') + 'Modifier le contenu</button>' : '') +
+      (q.status === 'accepte' ? '<button class="btn btn-primary btn-sm" data-q="invoice">' + icon('doc') + 'Créer la facture</button>' : '') +
       '<button class="btn btn-ghost btn-sm" data-q="edit">' + (crm ? 'Statut et notes' : icon('edit') + 'Modifier le devis') + '</button></div>';
 
     openSheet('Devis', body, (root) => {
       const on = (k, fn) => root.querySelectorAll('[data-q=' + k + ']').forEach((b) => b.addEventListener('click', fn));
       on('edit', () => { closeModal(); editQuote(q); });
       on('content', () => { closeModal(); editor = null; location.hash = '#/devis/' + q.id; });
+      on('invoice', () => { closeModal(); editor = null; location.hash = '#/facture/nouvelle?client=' + q.client_id + '&quote=' + q.id; });
       on('pdf', () => guard(() => openQuotePdf(q)));
       on('signed', (e) => { e.target.disabled = true; guard(() => downloadSignedQuote(q)).finally(() => { e.target.disabled = false; }); });
       on('copy', () => navigator.clipboard.writeText(signUrl(q)).then(() => toast('Lien copié'), () => toast('Copie impossible', true)));
@@ -1145,6 +1152,231 @@
   }
 
   const quoteFileName = (q) => 'Devis-' + String(q.reference || 'devis').replace(/[^\w-]+/g, '_') + '.pdf';
+
+  // ================================================================ factures et avoirs
+  const INV_STATUS = {
+    brouillon: { label: 'Brouillon', color: '#5a6472' },
+    emise: { label: 'À payer', color: '#e0691f' },
+    payee: { label: 'Payée', color: '#1f9d55' },
+    annulee: { label: 'Annulée (avoir)', color: '#8a94a3' }
+  };
+  const PAY_MODES = ['Virement', 'Chèque', 'Espèces', 'Carte bancaire'];
+  const invBadge = (inv) => (inv.kind === 'avoir' && inv.status !== 'brouillon' ? '<span class="badge" style="--c:#8a94a3">Avoir émis</span>' : badge(INV_STATUS, inv.status));
+  const invTitle = (inv) => (inv.kind === 'avoir' ? 'Avoir' : 'Facture') + ' ' + (inv.number || '(brouillon)');
+  const clientSnapshot = (c) => ({ name: c.name, company: c.company || '', address: c.address || '', postal_code: c.postal_code || '', city: c.city || '', email: c.email || '', phone: c.phone || '' });
+  const pdfCompany = () => Object.assign({}, company(), { bic: (S.data.settings.bank || {}).bic || '' });
+  const invoiceFileName = (inv) => (inv.kind === 'avoir' ? 'Avoir-' : 'Facture-') + String(inv.number || 'brouillon').replace(/[^\w-]+/g, '_') + '.pdf';
+
+  async function invoicePdfBytes(inv) {
+    const ref = inv.ref_invoice_id ? S.data.invoices.find((x) => x.id === inv.ref_invoice_id) : null;
+    const c = inv.client_snapshot || clientSnapshot(client(inv.client_id) || {});
+    return QuotePdf.build(Object.assign({}, inv, { reference: inv.number || '(numéro attribué à l’émission)', ref_number: ref ? ref.number : '' }), c, pdfCompany(), { kind: inv.kind });
+  }
+
+  // PDF officiel : conservé tel qu'émis (la facture ne change plus ensuite)
+  async function invoicePdf(inv) {
+    if (inv.pdf_path) return S.getQuotePdf(inv.pdf_path);
+    return invoicePdfBytes(inv);
+  }
+
+  function lastServiceDate(clientId) {
+    const a = S.data.appointments.filter((x) => x.client_id === clientId && x.status === 'termine').sort((x, y) => y.start_at.localeCompare(x.start_at))[0];
+    return a ? ymd(new Date(a.start_at)) : ymd(new Date());
+  }
+
+  function startInvoiceEditor(key, inv, opts) {
+    if (inv) {
+      editor = { doc: 'invoice', key, id: inv.id, clientId: inv.client_id, kind: inv.kind, refId: inv.ref_invoice_id, quoteId: inv.quote_id,
+        q: { title: inv.title || '', project_address: inv.project_address || '', service_date: inv.service_date || '', due_date: inv.due_date || '', notes: inv.notes || '',
+          paid_method: inv.payment_method || '', paid_at: inv.paid_at || '', lines: JSON.parse(JSON.stringify(inv.lines || [])) } };
+      return;
+    }
+    const c = client(opts.clientId);
+    const q = opts.quoteId ? S.data.quotes.find((x) => x.id === opts.quoteId) : null;
+    const ref = opts.refId ? S.data.invoices.find((x) => x.id === opts.refId) : null;
+    let lines = [], title = '';
+    if (ref) { // avoir : reprend les lignes de la facture en négatif
+      lines = (ref.lines || []).map((l) => Object.assign({}, l, { price_ttc: -Math.abs(Number(l.price_ttc) || 0) }));
+      title = 'Avoir — ' + (ref.title || 'facture ' + ref.number);
+    } else if (q && Array.isArray(q.lines)) { lines = JSON.parse(JSON.stringify(q.lines)); title = q.title || ''; }
+    else if (q) { lines = [{ label: q.title || 'Prestation selon devis ' + (q.reference || ''), description: '', unit: 'forfait', qty: 1, price_ttc: Number(q.amount) || 0 }]; title = q.title || ''; }
+    else { lines = linesFor(kindFromClient(c), c.radiators_count || INCLUDED); title = QUOTE_KINDS[kindFromClient(c)].title; }
+    editor = { doc: 'invoice', key, id: null, clientId: c.id, kind: ref ? 'avoir' : 'facture', refId: ref ? ref.id : null, quoteId: q ? q.id : (ref ? ref.quote_id : null),
+      q: { title, project_address: (q && q.project_address) || (ref && ref.project_address) || clientAddress(c), service_date: ref ? ref.service_date : lastServiceDate(c.id),
+        due_date: '', notes: q ? 'Devis ' + (q.reference || '') : '', paid_method: '', paid_at: '', lines } };
+  }
+
+  function viewInvoiceEditor(id, params) {
+    if (!S.isAdmin()) return pageHead('Factures') + empty('Réservé au gérant.');
+    const inv = id ? S.data.invoices.find((x) => x.id === id) : null;
+    if (inv && inv.status !== 'brouillon') return pageHead(invTitle(inv), 'Émise : elle ne peut plus être modifiée.', '', '#/factures') + empty('Une facture émise ne se modifie plus. Pour la corriger, créez un avoir depuis la facture.');
+    const cid = inv ? inv.client_id : params.get('client');
+    const c = client(cid);
+    if (!c) return pageHead('Facture', '', '', '#/factures') + empty('Client introuvable.');
+    const key = 'inv:' + (id || [cid, params.get('quote') || '', params.get('avoir') || ''].join(':'));
+    if (!editor || editor.key !== key) startInvoiceEditor(key, inv, { clientId: cid, quoteId: params.get('quote'), refId: params.get('avoir') });
+    const e = editor.q, isAvoir = editor.kind === 'avoir';
+    const ref = editor.refId ? S.data.invoices.find((x) => x.id === editor.refId) : null;
+
+    let html = pageHead(isAvoir ? 'Nouvel avoir' : (inv ? 'Brouillon de facture' : 'Nouvelle facture'), esc(c.name) + (ref ? ' · sur la facture ' + esc(ref.number) : ''), '', '#/clients/' + c.id);
+    html += '<div class="grid-2">';
+    html += card('Informations', '<div class="pad form-grid">' +
+      '<label class="field"><span>Objet</span><input data-q="title" value="' + esc(e.title) + '"></label>' +
+      '<label class="field half"><span>Date de la prestation</span><input type="date" data-q="service_date" value="' + esc(e.service_date) + '"></label>' +
+      (isAvoir ? '' : '<label class="field half"><span>Échéance (vide = à réception)</span><input type="date" data-q="due_date" value="' + esc(e.due_date) + '"></label>') +
+      '<label class="field"><span>Adresse du chantier</span><textarea data-q="project_address" rows="2">' + esc(e.project_address) + '</textarea></label>' +
+      '<label class="field"><span>Note interne (non imprimée)</span><input data-q="notes" value="' + esc(e.notes) + '"></label></div>');
+    html += isAvoir ? card('Avoir', '<p class="pad">Les lignes de la facture sont reprises en négatif. Pour un avoir partiel, modifiez les quantités ou les montants. Un avoir du montant total annule la facture.</p>')
+      : card('Règlement', '<div class="pad form-grid">' +
+        '<label class="field half"><span>Déjà réglée ?</span><select data-q="paid_method"><option value="">Non, à payer</option>' + PAY_MODES.map((m) => '<option' + (e.paid_method === m ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></label>' +
+        '<label class="field half"><span>Date du règlement</span><input type="date" data-q="paid_at" value="' + esc(e.paid_at) + '"></label>' +
+        '<p class="muted small" style="grid-column:1/-1">Si le client a déjà payé, la facture portera la mention « acquittée ».</p></div>');
+    html += '<section class="card span-2"><header class="card-head"><h3>Lignes</h3></header><div class="qlines" id="qlines">' +
+      (e.lines.length ? e.lines.map(lineHtml).join('') : empty('Aucune ligne.')) + '</div>' +
+      '<div class="qadd"><select id="q-add-item"><option value="">+ Ajouter une prestation du catalogue…</option>' +
+      catalog().map((it) => '<option value="' + esc(it.id) + '">' + esc(it.label) + ' — ' + esc(fmtMoney2(it.price_ttc)) + '</option>').join('') +
+      '<option value="__free">Ligne libre</option></select></div>' +
+      '<div class="qtotals" id="qtotals">' + editorTotalsHtml() + '</div></section></div>';
+    html += '<div class="qactions"><button class="btn btn-ghost" data-action="inv-preview">Aperçu PDF</button>' +
+      '<button class="btn btn-ghost" data-action="inv-save">Enregistrer le brouillon</button>' +
+      '<button class="btn btn-primary btn-lg" data-action="inv-issue">' + (isAvoir ? 'Émettre l’avoir' : 'Émettre la facture') + '</button></div>' +
+      '<p class="muted small" style="text-align:right;margin-top:8px">Une fois émise, ' + (isAvoir ? 'l’avoir' : 'la facture') + ' reçoit son numéro définitif et ne peut plus être modifié' + (isAvoir ? '' : 'e') + '.</p>';
+    return html;
+  }
+
+  async function saveInvoiceDraft() {
+    const e = editor.q;
+    const lines = e.lines.filter((l) => String(l.label || '').trim() || Number(l.price_ttc));
+    if (!lines.length) throw new Error('Ajoutez au moins une ligne.');
+    if (lines.some((l) => !String(l.label || '').trim())) throw new Error('Chaque ligne doit avoir une désignation.');
+    const t = QuotePdf.computeTotals(lines, company().vat_rate);
+    if (editor.kind === 'facture' && t.ttc <= 0) throw new Error('Le montant de la facture doit être positif.');
+    if (editor.kind === 'avoir' && t.ttc >= 0) throw new Error('Le montant d’un avoir doit être négatif.');
+    if (e.paid_method && !e.paid_at) e.paid_at = ymd(new Date());
+    const c = client(editor.clientId);
+    const patch = { title: e.title.trim(), project_address: e.project_address.trim(), service_date: e.service_date || null, due_date: e.due_date || null, notes: e.notes,
+      lines, total_ht: t.ht, total_tva: t.tva, total_ttc: t.ttc, client_snapshot: clientSnapshot(c),
+      payment_method: e.paid_method || null, paid_at: e.paid_method ? e.paid_at : null };
+    let row;
+    if (editor.id) row = await S.update('invoices', editor.id, patch);
+    else {
+      row = await S.insert('invoices', Object.assign(patch, { client_id: editor.clientId, quote_id: editor.quoteId || null, kind: editor.kind, ref_invoice_id: editor.refId || null, status: 'brouillon', created_by: S.user.id }));
+      editor.id = row.id; editor.key = 'inv:' + row.id;
+    }
+    editor.q.lines = lines;
+    return row;
+  }
+
+  // Émission : numéro définitif, PDF figé et archivé (factures/…)
+  async function issueInvoice() {
+    const draft = await saveInvoiceDraft();
+    const inv = await S.issueInvoice(draft.id);
+    const bytes = await invoicePdfBytes(inv);
+    const path = 'factures/' + inv.number + '.pdf';
+    await S.putFile(path, bytes);
+    const row = await S.update('invoices', inv.id, { pdf_path: path });
+    await logActivity(inv.client_id, 'note', invTitle(row) + ' émis' + (row.kind === 'avoir' ? '' : 'e') + ' (' + fmtMoney2(row.total_ttc) + ' TTC)');
+    return row;
+  }
+
+  function invoiceRows(list) {
+    return '<div class="list">' + list.map((inv) => {
+      const c = inv.client_snapshot || client(inv.client_id) || {};
+      return '<button class="row" data-action="open-invoice" data-id="' + inv.id + '"><div class="row-main"><div class="row-title">' + esc(invTitle(inv)) + ' · ' + esc(fmtMoney2(inv.total_ttc)) + '</div>' +
+        '<div class="row-sub">' + esc(c.name || '') + (inv.title ? ' · ' + esc(inv.title) : '') + (inv.issue_date ? ' · émise le ' + esc(fmtDate(inv.issue_date)) : '') + '</div></div>' +
+        invBadge(inv) + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function invoiceEmailText(inv, c) {
+    const isAvoir = inv.kind === 'avoir';
+    const bank = S.data.settings.bank || {}, co = company();
+    const pay = isAvoir ? '' : inv.paid_at
+      ? 'Elle a bien été réglée le ' + fmtDate(inv.paid_at) + ', merci !'
+      : 'Elle est payable à réception' + (co.iban || bank.iban ? ', par virement (IBAN ' + (bank.iban || co.iban) + ')' : '') + ' ou par chèque à l\'ordre de ' + co.legal_name + '.';
+    return 'Bonjour,\n\nVeuillez trouver ci-joint ' + (isAvoir ? 'votre avoir n° ' : 'votre facture n° ') + inv.number + ' d\'un montant de ' + fmtMoney2(Math.abs(inv.total_ttc)) + ' TTC' +
+      (inv.title ? ', concernant : ' + inv.title.toLowerCase() : '') + '.' + (pay ? '\n\n' + pay : '') +
+      '\n\nMerci pour votre confiance.\n\nBien cordialement,\nSébastien Tilliet';
+  }
+
+  async function bytesToBase64(bytes) {
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+    return String(dataUrl).split(',')[1];
+  }
+
+  function invoiceSheet(inv) {
+    inv = S.data.invoices.find((x) => x.id === inv.id) || inv;
+    const c = client(inv.client_id) || inv.client_snapshot || { name: 'Client' };
+    const isAvoir = inv.kind === 'avoir', draft = inv.status === 'brouillon';
+    const ref = inv.ref_invoice_id ? S.data.invoices.find((x) => x.id === inv.ref_invoice_id) : null;
+    const avoirs = S.data.invoices.filter((x) => x.ref_invoice_id === inv.id && x.status !== 'brouillon');
+    let body = '<div class="pay-head"><span class="pay-amount">' + esc(fmtMoney2(inv.total_ttc)) + '</span><span class="muted">' + esc(invTitle(inv)) + ' · ' + esc(c.name) + '</span>' +
+      '<span class="small muted">' + invBadge(inv) +
+      (inv.issue_date ? ' · émise le ' + esc(fmtDate(inv.issue_date)) : '') + '</span></div>';
+    if (ref) body += '<p class="center small">Avoir sur la facture <b>' + esc(ref.number) + '</b></p>';
+    if (avoirs.length) body += '<p class="center small">Avoir(s) : ' + avoirs.map((a) => esc(a.number) + ' (' + esc(fmtMoney2(a.total_ttc)) + ')').join(', ') + '</p>';
+    if (inv.status === 'payee') body += '<div class="pay-done">✓ Payée le ' + esc(fmtDate(inv.paid_at)) + (inv.payment_method ? ' · ' + esc(inv.payment_method) : '') + '</div>';
+    if (inv.sent_at) body += '<p class="center muted small">Envoyée par e-mail le ' + esc(fmt(inv.sent_at, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })) + '</p>';
+
+    body += '<div class="pay-actions">' + (draft
+      ? '<button class="btn btn-primary" data-i="edit">Ouvrir le brouillon</button>'
+      : (c.email ? '<button class="btn btn-primary" data-i="email">' + icon('mail') + 'Envoyer par e-mail</button>' : '') +
+        '<button class="btn btn-ghost" data-i="download">Télécharger le PDF</button>' +
+        (inv.status === 'emise' && !isAvoir ? '<button class="btn btn-ghost" data-i="pay">Marquer comme payée</button>' : '')) + '</div>';
+    body += '<div class="pay-admin">' + (draft ? '<button class="btn btn-ghost btn-sm" data-i="preview">Aperçu</button><button class="btn btn-danger-ghost btn-sm" data-i="delete">Supprimer le brouillon</button>'
+      : (!isAvoir && inv.status !== 'annulee' ? '<button class="btn btn-ghost btn-sm" data-i="avoir">Corriger / annuler par un avoir</button>' : '') +
+        (inv.client_id ? '<a class="btn btn-ghost btn-sm" href="#/clients/' + inv.client_id + '">Fiche client</a>' : '')) + '</div>';
+
+    openSheet(isAvoir ? 'Avoir' : 'Facture', body, (root) => {
+      const on = (k, fn) => root.querySelectorAll('[data-i=' + k + ']').forEach((b) => b.addEventListener('click', fn));
+      on('edit', () => { closeModal(); editor = null; location.hash = '#/facture/' + inv.id; });
+      on('preview', async () => { const b = await guard(() => invoicePdfBytes(inv)); window.open(URL.createObjectURL(new Blob([b], { type: 'application/pdf' })), '_blank'); });
+      on('download', async () => { const b = await guard(() => invoicePdf(inv)); window.SignedPdf.download(b, invoiceFileName(inv)); });
+      on('delete', async (ev) => {
+        if (ev.target.dataset.confirm !== '1') { ev.target.dataset.confirm = '1'; ev.target.textContent = 'Confirmer la suppression ?'; return; }
+        await guard(() => S.remove('invoices', inv.id)); closeModal(); toast('Brouillon supprimé'); render();
+      });
+      on('avoir', () => { closeModal(); editor = null; location.hash = '#/facture/nouvelle?client=' + inv.client_id + '&avoir=' + inv.id; });
+      on('pay', () => openForm({
+        title: 'Facture ' + inv.number + ' payée',
+        fields: [{ name: 'payment_method', label: 'Moyen de paiement', type: 'select', options: PAY_MODES, half: true }, { name: 'paid_at', label: 'Date du règlement', type: 'date', required: true, half: true }],
+        values: { payment_method: 'Virement', paid_at: ymd(new Date()) },
+        onSubmit: async (v) => {
+          await S.update('invoices', inv.id, { status: 'payee', paid_at: v.paid_at, payment_method: v.payment_method });
+          if (inv.client_id) await logActivity(inv.client_id, 'note', 'Facture ' + inv.number + ' payée (' + v.payment_method.toLowerCase() + ', ' + fmtMoney2(inv.total_ttc) + ')');
+          toast('Facture marquée comme payée');
+        }
+      }));
+      on('email', async () => {
+        const bytes = await guard(() => invoicePdf(inv));
+        emailSheet(Object.assign({}, c, { email: c.email }), {
+          subject: (isAvoir ? 'Votre avoir ' : 'Votre facture ') + inv.number + ' — ' + company().name,
+          text: invoiceEmailText(inv, c),
+          attachments: [{ name: invoiceFileName(inv), type: 'application/pdf', base64: await bytesToBase64(bytes) }],
+          logText: invTitle(inv) + ' envoyé' + (isAvoir ? '' : 'e') + ' par e-mail',
+          onSent: () => S.update('invoices', inv.id, { sent_at: new Date().toISOString() }).catch(() => {})
+        });
+      });
+    });
+  }
+
+  function viewInvoices(params) {
+    if (!S.isAdmin()) return pageHead('Factures') + empty('Réservé au gérant.');
+    const st = params.get('s') || '';
+    const list = S.data.invoices.filter((x) => !st || (st === 'impayees' ? x.status === 'emise' && x.kind === 'facture' : x.status === st))
+      .sort((a, b) => String(b.number || 'zz' + b.created_at).localeCompare(String(a.number || 'zz' + a.created_at)));
+    const due = S.data.invoices.filter((x) => x.status === 'emise' && x.kind === 'facture');
+    const year = String(new Date().getFullYear());
+    const ca = S.data.invoices.filter((x) => x.status !== 'brouillon' && String(x.issue_date || '').startsWith(year)).reduce((s, x) => s + Number(x.total_ttc || 0), 0);
+    let html = pageHead('Factures', S.data.invoices.filter((x) => x.status !== 'brouillon').length + ' émise(s)');
+    html += '<div class="kpis">' + kpi('Facturé en ' + year, fmtMoney(ca), '#/factures', 'TTC, avoirs déduits') + kpi('À encaisser', fmtMoney(due.reduce((s, x) => s + Number(x.total_ttc), 0)), '#/factures?s=impayees', due.length + ' facture(s)') + '</div>';
+    html += '<div class="chips" style="margin-bottom:12px">' + [['', 'Toutes'], ['impayees', 'À payer'], ['payee', 'Payées'], ['brouillon', 'Brouillons']]
+      .map(([k, l]) => '<a class="chip' + (st === k ? ' on' : '') + '" href="#/factures' + (k ? '?s=' + k : '') + '">' + l + '</a>').join('') + '</div>';
+    html += '<section class="card flush">' + (list.length ? invoiceRows(list) : empty('Aucune facture. Créez-en une depuis la fiche d’un client ou depuis un devis accepté.')) + '</section>';
+    html += '<p class="muted small" style="margin-top:10px">Pour la facturation électronique : téléchargez le PDF de chaque facture (bouton « Télécharger ») et importez-le dans votre logiciel agréé.</p>';
+    return html;
+  }
 
   // ================================================================ paiements
   function qrSvg(text) {
@@ -1487,6 +1719,9 @@
         (doneNoPay.length ? '<p class="muted small pad">Interventions terminées sans paiement enregistré :</p><div class="list">' + doneNoPay.map((a) => apptRow(a, { showDate: true })).join('') + '</div>' : '') +
         (!due.length && !doneNoPay.length ? empty('Tout est encaissé.') : ''));
 
+      const unpaid = S.data.invoices.filter((x) => x.status === 'emise' && x.kind === 'facture').sort((a, b) => String(a.issue_date).localeCompare(String(b.issue_date)));
+      if (unpaid.length) html += card('Factures à encaisser <span class="count">' + unpaid.length + '</span>', invoiceRows(unpaid), '<a class="link" href="#/factures?s=impayees">Toutes</a>');
+
       const recent = S.data.clients.filter((c) => c.status === 'nouveau').sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
       html += card('Nouveaux prospects', recent.length ? '<div class="list">' + recent.map((c) => clientRow(c)).join('') + '</div>' : empty('Aucun nouveau prospect.'),
         '<button class="btn btn-ghost btn-sm" data-action="new-client">' + icon('plus') + 'Prospect</button>');
@@ -1736,6 +1971,11 @@
         '<button class="btn btn-primary btn-sm" data-action="new-crm-quote" data-client="' + c.id + '">' + icon('plus') + 'Créer un devis</button>');
     }
 
+    if (S.isAdmin()) {
+      const invs = S.data.invoices.filter((x) => x.client_id === id).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      html += card('Factures', (invs.length ? invoiceRows(invs) : empty('Aucune facture pour ce client.')),
+        '<button class="btn btn-ghost btn-sm" data-action="new-invoice" data-client="' + c.id + '">' + icon('plus') + 'Facture</button>');
+    }
     const pays = S.data.payments.filter((p) => p.client_id === id).sort((a, b) => b.created_at.localeCompare(a.created_at));
     html += card('Paiements' + (pays.some((p) => p.status === 'paye') ? ' <span class="muted small">· ' + esc(fmtMoney2(paidTotal(id))) + ' reçus</span>' : ''),
       pays.length ? paymentsList(pays) : empty('Aucun paiement enregistré.'),
@@ -1839,6 +2079,7 @@
       '<div class="info"><span>Rôle</span><b>' + (S.isAdmin() ? 'Gérant' : 'Technicien') + '</b></div><div class="info"><span>Version</span><b>' + APP_VERSION + '</b></div></div>' +
       '<div class="btn-row">' +
       (S.isAdmin() ? '<a class="btn btn-ghost" href="#/equipe">' + icon('team') + 'Équipe</a>' : '') +
+      (S.isAdmin() ? '<a class="btn btn-ghost" href="#/factures">' + icon('doc') + 'Factures</a>' : '') +
       (S.mode === 'supabase' ? '<button class="btn btn-ghost" data-action="change-password">Changer mon mot de passe</button>' : '') +
       (S.isAdmin() ? '<button class="btn btn-ghost" data-action="export-csv">Exporter les clients (CSV)</button>' : '') +
       (S.mode === 'demo' && S.isAdmin() ? '<button class="btn btn-danger-ghost" data-action="reset-demo">Réinitialiser la démo</button>' : '') +
@@ -1881,7 +2122,8 @@
         '<div class="list">' + catalog().map((it) => '<button class="row" data-action="cat-edit" data-id="' + esc(it.id) + '"><div class="row-main"><div class="row-title">' + esc(it.label) + '</div>' +
           '<div class="row-sub">' + esc(fmtMoney2(it.price_ttc)) + ' TTC / ' + esc(it.unit) + (it.description ? ' · ' + esc(it.description.slice(0, 70)) + '…' : '') + '</div></div></button>').join('') + '</div>' +
         '<p class="muted small pad">Le remplissage rapide utilise les forfaits « 5 inclus » et les lignes « supplémentaires » de chaque type (radiateurs, plancher, mixte).</p>' +
-        '<div class="pad numbering"><span>Numérotation : le prochain devis portera le n° <b id="next-quote-n">…</b></span> <button class="link" data-action="counter-edit">Modifier</button></div></section>';
+        '<div class="pad numbering"><span>Numérotation : le prochain devis portera le n° <b id="next-quote-n">…</b></span> <button class="link" data-action="counter-edit" data-key="devis">Modifier</button><br>' +
+        '<span>Prochaine facture : <b id="next-inv-n">…</b> · prochain avoir : <b id="next-av-n">…</b></span> <button class="link" data-action="counter-edit" data-key="facture">Modifier</button></div></section>';
 
       // Envoi des e-mails via un script Google (Gmail du gérant)
       const em = S.data.settings.email || {};
@@ -1978,6 +2220,8 @@
       else if (section === 'pipeline' && S.isAdmin()) html = viewPipeline();
       else if (section === 'rdv' && parts[1]) html = viewAppointment(parts[1]);
       else if (section === 'devis') html = viewQuoteEditor(parts[1] === 'nouveau' ? null : parts[1], params);
+      else if (section === 'factures') html = viewInvoices(params);
+      else if (section === 'facture') html = viewInvoiceEditor(parts[1] === 'nouvelle' ? null : parts[1], params);
       else if (section === 'site' && S.isAdmin()) html = viewSite(params);
       else if (section === 'equipe') html = viewTeam();
       else if (section === 'demo-paiement' && parts[1] && S.mode === 'demo') html = viewDemoCheckout(parts[1]);
@@ -1994,7 +2238,7 @@
     window.scrollTo(0, sameRoute ? scroll : 0);
     document.querySelectorAll('.nav a').forEach((a) => {
       const target = a.getAttribute('href').slice(2).split('/')[0];
-      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'site', 'equipe', 'reglages', 'rdv', 'devis'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis'));
+      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'site', 'equipe', 'reglages', 'rdv', 'devis', 'factures', 'facture'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis') || (target === 'factures' && section === 'facture'));
     });
     bindView();
   }
@@ -2002,7 +2246,7 @@
   function renderShell() {
     const admin = S.isAdmin();
     const items = [['', 'home', 'Accueil'], ['agenda', 'calendar', 'Agenda'], ['clients', 'users', 'Clients']];
-    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['site', 'chart', 'Site web'], ['equipe', 'team', 'Équipe']);
+    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['factures', 'doc', 'Factures'], ['site', 'chart', 'Site web'], ['equipe', 'team', 'Équipe']);
     items.push(['reglages', 'settings', 'Réglages']);
     document.getElementById('app').innerHTML =
       '<aside class="sidebar"><div class="brand"><img src="icons/icon.svg" alt=""><div><b>Alpes Désembouage</b><span>CRM</span></div></div>' +
@@ -2144,6 +2388,13 @@
       nextN.textContent = 'DEV-' + d.getFullYear() + '/' + pad(d.getMonth() + 1) + '-' + String((n || 0) + 1).padStart(4, '0');
     }).catch(() => { nextN.textContent = '(à activer : exécutez devis.sql dans Supabase)'; });
 
+    const nextInv = $('#next-inv-n');
+    if (nextInv) {
+      const y = new Date().getFullYear();
+      S.getCounter('facture').then((n) => { nextInv.textContent = 'FAC-' + y + '-' + String((n || 0) + 1).padStart(4, '0'); }).catch(() => { nextInv.textContent = '(à activer : exécutez factures.sql)'; });
+      S.getCounter('avoir').then((n) => { $('#next-av-n').textContent = 'AV-' + y + '-' + String((n || 0) + 1).padStart(4, '0'); }).catch(() => {});
+    }
+
     const cgvInput = $('#cgv-file');
     if (cgvInput) cgvInput.addEventListener('change', async () => {
       const file = cgvInput.files[0];
@@ -2273,14 +2524,59 @@
     'sig-default': () => { $('#sig-editor').innerHTML = defaultSignatureHtml(); toast('Signature par défaut : pensez à enregistrer'); },
     'cat-new': () => editCatalogItem(null),
     'cat-edit': (el) => editCatalogItem(catalog().find((x) => x.id === el.dataset.id)),
-    'counter-edit': async () => {
-      const current = await guard(() => S.getQuoteCounter());
+    'counter-edit': async (el) => {
+      const key = el.dataset.key || 'devis';
+      const current = await guard(() => S.getCounter(key));
+      const what = { devis: 'devis', facture: 'factures' }[key];
       openForm({
-        title: 'Numérotation des devis',
-        fields: [{ name: 'last', label: 'Dernier numéro utilisé', type: 'number', required: true, hint: 'Le prochain devis prendra ce numéro + 1. À ne modifier que pour rester aligné avec vos anciens devis.' }],
+        title: 'Numérotation des ' + what,
+        fields: [{ name: 'last', label: 'Dernier numéro utilisé', type: 'number', required: true,
+          hint: key === 'facture'
+            ? 'La prochaine facture prendra ce numéro + 1 (FAC-' + new Date().getFullYear() + '-…). Pour continuer la suite de votre ancien logiciel, indiquez son dernier numéro ; sinon laissez 0 pour démarrer une nouvelle série.'
+            : 'Le prochain devis prendra ce numéro + 1. À ne modifier que pour rester aligné avec vos anciens devis.' }],
         values: { last: current },
-        onSubmit: async (v) => { await S.setQuoteCounter(Math.max(0, Math.round(v.last))); toast('Numérotation mise à jour'); }
+        onSubmit: async (v) => {
+          const n = Math.max(0, Math.round(v.last));
+          if (key === 'facture' && n < current && S.data.invoices.some((x) => x.number)) throw new Error('Impossible de revenir en arrière : des factures ont déjà été émises avec ces numéros.');
+          await S.setCounter(key, n); toast('Numérotation mise à jour');
+        }
       });
+    },
+    'new-invoice': (el) => {
+      // Devis accepté sans facture : on propose de partir de ce devis
+      const cid = el.dataset.client;
+      const q = S.data.quotes.filter((x) => x.client_id === cid && x.status === 'accepte' && !S.data.invoices.some((i) => i.quote_id === x.id && i.kind === 'facture'))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+      editor = null;
+      location.hash = '#/facture/nouvelle?client=' + cid + (q ? '&quote=' + q.id : '');
+      if (q) setTimeout(() => toast('Facture préparée à partir du devis ' + (q.reference || '')), 300);
+    },
+    'open-invoice': (el) => invoiceSheet(S.data.invoices.find((x) => x.id === el.dataset.id)),
+    'inv-preview': async (el) => {
+      el.disabled = true;
+      try {
+        const e = editor.q, t = QuotePdf.computeTotals(e.lines, company().vat_rate);
+        const ref = editor.refId ? S.data.invoices.find((x) => x.id === editor.refId) : null;
+        const bytes = await guard(() => QuotePdf.build(Object.assign({}, e, { reference: '(numéro attribué à l’émission)', issue_date: ymd(new Date()), paid_at: e.paid_method ? (e.paid_at || ymd(new Date())) : null,
+          payment_method: e.paid_method, total_ttc: t.ttc, ref_number: ref ? ref.number : '' }), clientSnapshot(client(editor.clientId)), pdfCompany(), { kind: editor.kind }));
+        window.open(URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), '_blank');
+      } catch (e) { /* déjà signalé */ }
+      el.disabled = false;
+    },
+    'inv-save': async (el) => {
+      el.disabled = true;
+      try { const row = await guard(saveInvoiceDraft); toast('Brouillon enregistré'); history.replaceState(null, '', '#/facture/' + row.id); render(); } catch (e) { el.disabled = false; }
+    },
+    'inv-issue': async (el) => {
+      if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : émettre (définitif) ?'; return; }
+      el.disabled = true; el.textContent = 'Émission…';
+      try {
+        const row = await guard(issueInvoice);
+        editor = null;
+        toast(invTitle(row) + ' émis' + (row.kind === 'avoir' ? '' : 'e'));
+        location.hash = row.client_id ? '#/clients/' + row.client_id : '#/factures';
+        setTimeout(() => invoiceSheet(row), 200);
+      } catch (e) { el.disabled = false; el.dataset.confirm = ''; el.textContent = 'Réessayer l’émission'; }
     },
     'new-crm-quote': (el) => { editor = null; location.hash = '#/devis/nouveau?client=' + el.dataset.client; },
     'q-kind': (el) => {

@@ -59,7 +59,11 @@
     } catch (e) { return null; }
   }
 
-  async function build(quote, client, co) {
+  // opts.kind : 'devis' (par défaut), 'facture' ou 'avoir' — même mise en page, blocs adaptés
+  async function build(quote, client, co, opts) {
+    const kind = (opts && opts.kind) || 'devis';
+    const isInv = kind !== 'devis';
+    const docName = { devis: 'Devis', facture: 'Facture', avoir: 'Avoir' }[kind];
     const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -98,7 +102,7 @@
     txt(brand, bx, y - 18, { font: bold, size: 25, color: navy });
     txt(co.tagline || 'Désembouage de circuits de chauffage', bx, y - 35, { size: 10.5, color: gray });
 
-    right('DEVIS', R, y - 18, { font: bold, size: 28, color: orange });
+    right(docName.toUpperCase(), R, y - 18, { font: bold, size: 28, color: orange });
     right('N° ' + (quote.reference || ''), R, y - 35, { font: bold, size: 11.5, color: navy });
     y -= 62;
     // fine ligne d'accent : marine + touche orange
@@ -109,7 +113,7 @@
     y -= 22;
     txt('Date : ', M, y, { size: 10, color: gray });
     txt(frDate(quote.issue_date), M + width('Date : ', { size: 10 }), y, { font: bold, size: 10 });
-    const valid = 'Valable jusqu\'au ' + frDate(quote.valid_until);
+    const valid = isInv ? (quote.service_date ? 'Prestation réalisée le ' + frDate(quote.service_date) : '') : 'Valable jusqu\'au ' + frDate(quote.valid_until);
     right(valid, R, y, { size: 10, color: gray });
 
     // ---------------------------------------------------------------- cartes émetteur / client
@@ -159,7 +163,7 @@
       newPage();
       y = H - 46;
       txt(brand, M, y - 10, { font: bold, size: 14, color: navy });
-      right('Devis n° ' + (quote.reference || '') + ' (suite)', R, y - 10, { size: 10, color: gray });
+      right(docName + ' n° ' + (quote.reference || '') + ' (suite)', R, y - 10, { size: 10, color: gray });
       page.drawRectangle({ x: M, y: y - 22, width: R - M, height: 1, color: line });
       y -= 40;
     };
@@ -195,21 +199,47 @@
     right(eur(t.ttc), R - 16, y - 82, { font: bold, size: 17, color: white });
 
     const lw = tx - M - 24;
-    label('Conditions de paiement', M, y - 12);
-    const terms = wrap(co.payment_terms || '', font, 10, lw);
-    terms.forEach((ln, k) => txt(ln, M, y - 28 - k * 13.5, { size: 10 }));
-    let ly = y - 28 - terms.length * 13.5 - 10;
-    label('Validité', M, ly);
-    txt('Ce devis est valable jusqu\'au ' + frDate(quote.valid_until) + '.', M, ly - 16, { size: 10 });
+    let ly;
+    if (!isInv) {
+      label('Conditions de paiement', M, y - 12);
+      const terms = wrap(co.payment_terms || '', font, 10, lw);
+      terms.forEach((ln, k) => txt(ln, M, y - 28 - k * 13.5, { size: 10 }));
+      ly = y - 28 - terms.length * 13.5 - 10;
+      label('Validité', M, ly);
+      txt('Ce devis est valable jusqu\'au ' + frDate(quote.valid_until) + '.', M, ly - 16, { size: 10 });
+    } else {
+      // Règlement de la facture (ou référence de la facture annulée, pour un avoir)
+      const pay = [];
+      if (kind === 'avoir') pay.push('Avoir sur la facture n° ' + (quote.ref_number || '') + '.');
+      else if (quote.paid_at) pay.push('Facture acquittée le ' + frDate(quote.paid_at) + (quote.payment_method ? ' (' + quote.payment_method + ')' : '') + '. Merci !');
+      else {
+        pay.push('Échéance : ' + (quote.due_date && quote.due_date !== quote.issue_date ? frDate(quote.due_date) : 'à réception de la facture') + '.');
+        if (co.iban) pay.push('Virement : IBAN ' + co.iban + (co.bic ? ' — BIC ' + co.bic : '') + '.');
+        pay.push('Chèque à l\'ordre de ' + (co.legal_name || brand) + '.');
+      }
+      label(kind === 'avoir' ? 'Référence' : 'Règlement', M, y - 12);
+      let py = y - 28;
+      pay.forEach((p) => wrap(p, font, 10, lw).forEach((ln) => { txt(ln, M, py, { size: 10 }); py -= 13.5; }));
+      ly = py + 13.5;
+    }
     y = Math.min(y - 96, ly - 16) - 18;
 
     // ---------------------------------------------------------------- mentions
-    [co.vat_mention, co.extra_mention].filter(Boolean).forEach((m) => {
+    const mentions = isInv
+      ? [co.vat_mention,
+        kind === 'facture' ? 'En cas de retard de paiement : intérêts au taux légal pour les clients particuliers ; pour les clients professionnels, pénalités au taux de trois fois le taux d\'intérêt légal et indemnité forfaitaire pour frais de recouvrement de 40 € (art. L441-10 du Code de commerce). Pas d\'escompte pour paiement anticipé.' : '',
+        co.insurance ? 'Assurance responsabilité civile professionnelle et décennale : ' + co.insurance + (co.insurance_zone ? ', couverture géographique : ' + co.insurance_zone : '') + '.' : '']
+      : [co.vat_mention, co.extra_mention];
+    mentions.filter(Boolean).forEach((m) => {
       wrap(m, font, 8.8, R - M).forEach((ln) => { if (y < 80) continuedHeader(); txt(ln, M, y, { size: 8.8, color: gray }); y -= 11.5; });
       y -= 5;
     });
 
-    // ---------------------------------------------------------------- signatures
+    // ---------------------------------------------------------------- signatures (devis uniquement)
+    if (isInv) {
+      if (y < 90) continuedHeader();
+      txt('Merci pour votre confiance.', M, y - 14, { font: bold, size: 11, color: navy });
+    } else {
     if (y - 104 < 66) continuedHeader();
     y -= 12;
     const sh = 86;
@@ -223,6 +253,7 @@
     txt('Bon pour travaux. »', cx, y - 47, { size: 9.5, color: gray });
     txt('Signature électronique : voir le certificat', cx, y - 68, { size: 8.5, color: soft });
     txt('joint en fin de document une fois signé.', cx, y - 79, { size: 8.5, color: soft });
+    }
 
     // ---------------------------------------------------------------- pied de page (toutes les pages)
     const foot1 = [co.legal_name, safe(co.address || '').replace(/\n/g, ', '), co.phone ? 'Tél. ' + co.phone : '', co.email || ''].filter(Boolean).join('  ·  ');
@@ -236,7 +267,7 @@
       right((i + 1) + ' / ' + pages.length, R, 49, { font: bold, size: 8, color: soft });
     });
 
-    doc.setTitle(safe('Devis ' + (quote.reference || '') + ' - ' + brand));
+    doc.setTitle(safe(docName + ' ' + (quote.reference || '') + ' - ' + brand));
     doc.setAuthor(safe(co.legal_name || brand));
     return doc.save();
   }

@@ -127,6 +127,33 @@ dans l'agenda du CRM avec un bouton **« Relier »** (au client), et un rendez-v
 5. iPhone → Réglages → Calendrier → Comptes → Gmail → activer **Calendriers**.
    Puis Réglages → Calendrier → **Calendrier par défaut** → « CRM Alpes Désembouage » (pour que les nouveaux rendez-vous y soient notés).
 
+## Prospects des publicités Facebook / Instagram (via Make.com)
+
+Chaque prospect qui remplit un formulaire de publicité Facebook / Instagram (« Lead Ads ») est créé
+automatiquement dans le CRM (source « Facebook / Instagram (publicité) »), avec détection des doublons
+et notification ntfy, exactement comme les demandes du site.
+
+1. Créer un compte gratuit sur https://www.make.com (plan Free : environ 500 prospects / mois).
+2. **Create a new scenario** → module **Facebook Lead Ads → Watch Leads** :
+   connecter le compte Facebook qui gère la page, choisir la **Page** puis le **formulaire** (ou « tous »).
+3. Ajouter un module **HTTP → Make a request** :
+   - URL : `https://mgkbhucggqrkrtoyhjwi.supabase.co/rest/v1/rpc/submit_lead`
+   - Method : `POST`
+   - Headers : `apikey` = la clé publique du CRM (`crm/js/config.js`, `sb_publishable_…`) et `Content-Type` = `application/json`
+   - Body type : `Raw` → `JSON (application/json)` → contenu (en insérant les champs du formulaire Facebook) :
+     ```json
+     {
+       "p_name": "{{Nom complet}}",
+       "p_email": "{{E-mail}}",
+       "p_phone": "{{Numéro de téléphone}}",
+       "p_city": "{{Ville / code postal}}",
+       "p_message": "{{autres questions du formulaire}}",
+       "p_source": "Facebook / Instagram (publicité)"
+     }
+     ```
+4. **Run once**, envoyer un prospect test (outil de test des formulaires de Meta), vérifier qu'il arrive dans le CRM,
+   puis activer le scénario (**ON**, déclenchement « Immediately »).
+
 ## Alerte « nouveau prospect » sur le téléphone
 
 CRM → **Réglages → Alerte nouveau prospect** → **Générer un sujet**, installer l'application gratuite **ntfy**,
