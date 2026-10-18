@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '17 — factures';
+  const APP_VERSION = '18 — factures';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -1293,7 +1293,7 @@
     const bank = S.data.settings.bank || {}, co = company();
     const pay = isAvoir ? '' : inv.paid_at
       ? 'Elle a bien été réglée le ' + fmtDate(inv.paid_at) + ', merci !'
-      : 'Elle est payable à réception' + (co.iban || bank.iban ? ', par virement (IBAN ' + (bank.iban || co.iban) + ')' : '') + ' ou par chèque à l\'ordre de ' + co.legal_name + '.';
+      : 'Elle est payable à réception, par virement bancaire' + (co.iban || bank.iban ? ' (IBAN ' + (bank.iban || co.iban) + (bank.bic ? ' — BIC ' + bank.bic : '') + ')' : '') + '.';
     return 'Bonjour,\n\nVeuillez trouver ci-joint ' + (isAvoir ? 'votre avoir n° ' : 'votre facture n° ') + inv.number + ' d\'un montant de ' + fmtMoney2(Math.abs(inv.total_ttc)) + ' TTC' +
       (inv.title ? ', concernant : ' + inv.title.toLowerCase() : '') + '.' + (pay ? '\n\n' + pay : '') +
       '\n\nMerci pour votre confiance.\n\nBien cordialement,\nSébastien Tilliet';

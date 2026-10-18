@@ -214,8 +214,7 @@
       else if (quote.paid_at) pay.push('Facture acquittée le ' + frDate(quote.paid_at) + (quote.payment_method ? ' (' + quote.payment_method + ')' : '') + '. Merci !');
       else {
         pay.push('Échéance : ' + (quote.due_date && quote.due_date !== quote.issue_date ? frDate(quote.due_date) : 'à réception de la facture') + '.');
-        if (co.iban) pay.push('Virement : IBAN ' + co.iban + (co.bic ? ' — BIC ' + co.bic : '') + '.');
-        pay.push('Chèque à l\'ordre de ' + (co.legal_name || brand) + '.');
+        pay.push('Règlement par virement bancaire' + (co.iban ? ' : IBAN ' + co.iban + (co.bic ? ' — BIC ' + co.bic : '') : '') + '.');
       }
       label(kind === 'avoir' ? 'Référence' : 'Règlement', M, y - 12);
       let py = y - 28;
