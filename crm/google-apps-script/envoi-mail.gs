@@ -18,7 +18,7 @@ const NOM_CALENDRIER = 'CRM Alpes Désembouage';
 
 // Ouvrir l'URL /exec dans un navigateur affiche simplement ce message (utile pour vérifier le déploiement).
 function doGet() {
-  return ContentService.createTextOutput('Script du CRM Alpes Désembouage (e-mails + calendrier) : OK.');
+  return ContentService.createTextOutput('Script du CRM Alpes Désembouage : OK — version 3 (e-mails, pièces jointes, calendrier).');
 }
 
 function doPost(e) {
