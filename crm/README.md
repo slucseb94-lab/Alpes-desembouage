@@ -109,6 +109,24 @@ sans ouvrir votre messagerie. Cela passe par un petit script Google installé da
 
 Limite Google : 100 destinataires par jour avec un compte Gmail gratuit.
 
+## Calendrier iPhone (synchronisation des rendez-vous)
+
+Les rendez-vous du gérant sont copiés dans un calendrier Google **« CRM Alpes Désembouage »**, affiché dans
+l'app Calendrier de l'iPhone. Dans l'autre sens, un rendez-vous noté sur l'iPhone dans ce calendrier apparaît
+dans l'agenda du CRM avec un bouton **« Relier »** (au client), et un rendez-vous déplacé sur l'iPhone est repris par le CRM.
+
+1. Supabase → SQL Editor : exécuter `supabase/calendrier.sql`.
+2. script.google.com → projet du CRM :
+   - remplacer le code par `google-apps-script/envoi-mail.gs` (remettre la clé à la place de `COLLER_ICI_LA_CLE`) ;
+   - ⚙ Paramètres du projet → cocher « Afficher le fichier manifeste » → remplacer `appsscript.json` par `google-apps-script/appsscript.json` ;
+   - enregistrer, puis **Déployer → Gérer les déploiements → crayon → Nouvelle version → Déployer**, et accepter
+     la nouvelle autorisation (envoi d'e-mails + agenda).
+3. CRM → Réglages → **Calendrier iPhone** → « Activer pour mon profil », puis « Envoyer mes rendez-vous à venir ».
+4. Ouvrir https://calendar.google.com/calendar/syncselect (connecté avec le compte Gmail) et **cocher
+   « CRM Alpes Désembouage »** : sans cette étape, l'iPhone n'affiche pas les calendriers Google secondaires.
+5. iPhone → Réglages → Calendrier → Comptes → Gmail → activer **Calendriers**.
+   Puis Réglages → Calendrier → **Calendrier par défaut** → « CRM Alpes Désembouage » (pour que les nouveaux rendez-vous y soient notés).
+
 ## Alerte « nouveau prospect » sur le téléphone
 
 CRM → **Réglages → Alerte nouveau prospect** → **Générer un sujet**, installer l'application gratuite **ntfy**,

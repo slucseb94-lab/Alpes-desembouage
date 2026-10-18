@@ -1,22 +1,25 @@
 /**
- * CRM Alpes Désembouage — envoi des e-mails depuis votre compte Gmail.
+ * CRM Alpes Désembouage — script Google personnel :
+ *   1. envoi des e-mails depuis votre compte Gmail ;
+ *   2. synchronisation des rendez-vous avec le calendrier Google « CRM Alpes Désembouage »
+ *      (affiché dans l'app Calendrier de l'iPhone).
  *
- * Installation (une seule fois) : voir crm/README.md, section « Envoi des e-mails ».
- *  1. https://script.google.com → Nouveau projet → coller tout ce fichier.
- *  2. Remplacer COLLER_ICI_LA_CLE par la clé affichée dans le CRM (Réglages → Envoi des e-mails).
- *  3. Déployer → Nouveau déploiement → type « Application Web »
- *     Exécuter en tant que : Moi · Qui peut accéder : Tout le monde → Déployer → autoriser.
- *  4. Copier l'URL de l'application Web dans le CRM.
+ * Installation / mise à jour : voir crm/README.md (« Envoi des e-mails » et « Calendrier iPhone »).
+ *  - Coller tout ce fichier dans le projet, remplacer COLLER_ICI_LA_CLE par la clé du CRM.
+ *  - Remplacer aussi le fichier appsscript.json par crm/google-apps-script/appsscript.json.
+ *  - Déployer → Gérer les déploiements → crayon → Version : Nouvelle version → Déployer → autoriser.
  *
- * Les e-mails partent de VOTRE adresse Gmail (limite Google : 100 destinataires par jour).
- * Droits demandés par Google : uniquement « Envoyer des e-mails en votre nom » (+ voir votre adresse e-mail).
+ * Droits demandés par Google : envoyer des e-mails en votre nom, gérer vos agendas Google
+ * (le script ne touche qu'au calendrier « CRM Alpes Désembouage »), voir votre adresse e-mail.
  */
+
+const CLE_SECRETE = 'COLLER_ICI_LA_CLE';
+const NOM_CALENDRIER = 'CRM Alpes Désembouage';
 
 // Ouvrir l'URL /exec dans un navigateur affiche simplement ce message (utile pour vérifier le déploiement).
 function doGet() {
-  return ContentService.createTextOutput('Script d\'envoi des e-mails du CRM Alpes Désembouage : OK.');
+  return ContentService.createTextOutput('Script du CRM Alpes Désembouage (e-mails + calendrier) : OK.');
 }
-const CLE_SECRETE = 'COLLER_ICI_LA_CLE';
 
 function doPost(e) {
   try {
@@ -27,9 +30,18 @@ function doPost(e) {
     if (data.test) {
       return reponse({ ok: true, from: Session.getEffectiveUser().getEmail(), quota: MailApp.getRemainingDailyQuota() });
     }
+    // ---------------------------------------------------------------- calendrier
+    if (data.action === 'cal_upsert') return reponse(calUpsert(data));
+    if (data.action === 'cal_delete') return reponse(calDelete(data));
+    if (data.action === 'cal_list') return reponse(calList(data));
+    if (data.action === 'cal_test') {
+      const cal = calendrier();
+      return reponse({ ok: true, calendar: cal.getName(), email: Session.getEffectiveUser().getEmail() });
+    }
+
+    // ---------------------------------------------------------------- e-mail
     const to = String(data.to || '').trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return reponse({ ok: false, error: 'Adresse e-mail invalide' });
-
     // MailApp ne demande que le droit d'ENVOYER des e-mails (pas de lecture ni de suppression de votre boîte).
     MailApp.sendEmail({
       to: to,
@@ -42,6 +54,64 @@ function doPost(e) {
   } catch (err) {
     return reponse({ ok: false, error: String(err && err.message || err) });
   }
+}
+
+// Calendrier dédié, créé automatiquement à la première utilisation.
+function calendrier() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('CAL_ID');
+  let cal = id ? CalendarApp.getCalendarById(id) : null;
+  if (!cal) {
+    const found = CalendarApp.getCalendarsByName(NOM_CALENDRIER);
+    cal = found.length ? found[0] : CalendarApp.createCalendar(NOM_CALENDRIER, { color: CalendarApp.Color.BLUE, summary: 'Rendez-vous du CRM Alpes Désembouage' });
+    try { cal.setTimeZone('Europe/Paris'); } catch (e) { /* facultatif */ }
+    props.setProperty('CAL_ID', cal.getId());
+  }
+  return cal;
+}
+
+function trouver(cal, id) {
+  if (!id) return null;
+  try { return cal.getEventById(id); } catch (e) { return null; }
+}
+
+// Crée ou met à jour un rendez-vous (identifié par l'identifiant du CRM, mémorisé dans l'événement).
+function calUpsert(d) {
+  const cal = calendrier();
+  const start = new Date(d.start), end = new Date(d.end);
+  let ev = trouver(cal, d.gcal_id);
+  if (ev) {
+    ev.setTitle(d.title || 'Rendez-vous');
+    ev.setTime(start, end);
+    ev.setLocation(d.location || '');
+    ev.setDescription(d.description || '');
+  } else {
+    ev = cal.createEvent(d.title || 'Rendez-vous', start, end, { location: d.location || '', description: d.description || '' });
+  }
+  if (d.crm_id) ev.setTag('crm_id', String(d.crm_id));
+  return { ok: true, id: ev.getId() };
+}
+
+function calDelete(d) {
+  const ev = trouver(calendrier(), d.gcal_id);
+  if (ev) ev.deleteEvent();
+  return { ok: true };
+}
+
+// Liste les événements du calendrier sur une période (y compris ceux notés directement sur l'iPhone).
+function calList(d) {
+  const events = calendrier().getEvents(new Date(d.from), new Date(d.to)).map((ev) => ({
+    id: ev.getId(),
+    title: ev.getTitle(),
+    start: ev.getStartTime().toISOString(),
+    end: ev.getEndTime().toISOString(),
+    all_day: ev.isAllDayEvent(),
+    location: ev.getLocation(),
+    description: ev.getDescription(),
+    crm_id: ev.getTag('crm_id') || null,
+    updated: ev.getLastUpdated().toISOString()
+  }));
+  return { ok: true, events: events };
 }
 
 function reponse(obj) {

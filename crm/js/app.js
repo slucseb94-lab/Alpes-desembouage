@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '14 — modèles d’e-mail des devis';
+  const APP_VERSION = '15 — calendrier iPhone';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -453,6 +453,93 @@
       });
   }
 
+  // ================================================================ calendrier iPhone (via le calendrier Google « CRM Alpes Désembouage »)
+  // Les rendez-vous d'UN profil (celui qui a activé la synchro) sont envoyés vers son calendrier Google, affiché sur l'iPhone.
+  // Dans l'autre sens : les rendez-vous notés sur l'iPhone dans ce calendrier apparaissent dans l'agenda du CRM, à relier à un client.
+  const calCfg = () => S.data.settings.calendar || {};
+  const calReady = () => emailReady() && !!calCfg().enabled && !!calCfg().profile_id;
+  const calOwns = (a) => calReady() && a.technician_id === calCfg().profile_id;
+  let calExternal = {}; // événements notés sur l'iPhone, pas encore reliés au CRM
+  const calPulled = {};
+
+  function calEvent(a) {
+    const c = client(a.client_id) || {};
+    const start = new Date(a.start_at), end = new Date(start.getTime() + (Number(a.duration_min) || 60) * 60000);
+    return {
+      crm_id: a.id, gcal_id: a.gcal_event_id || null,
+      title: (a.status === 'termine' ? '✓ ' : '') + (APPT_TYPES[a.type] || 'Rendez-vous') + ' — ' + (c.name || 'Client'),
+      start: start.toISOString(), end: end.toISOString(), location: fullAddress(c),
+      description: [c.phone ? 'Tél. ' + c.phone : '', 'Statut : ' + (APPT_STATUS[a.status] || {}).label, a.notes ? 'Consignes : ' + a.notes : '',
+        'Fiche CRM : ' + location.origin + location.pathname.replace(/index\.html$/, '') + '#/clients/' + c.id].filter(Boolean).join('\n')
+    };
+  }
+
+  // Envoie (ou retire) un rendez-vous du calendrier. Ne bloque jamais l'utilisation du CRM.
+  async function calPush(a) {
+    if (!a || !calReady()) return;
+    try {
+      if (!calOwns(a) || a.status === 'annule') {
+        if (a.gcal_event_id) {
+          await callMailScript({ action: 'cal_delete', gcal_id: a.gcal_event_id });
+          await S.update('appointments', a.id, { gcal_event_id: null, gcal_synced_at: new Date().toISOString() });
+        }
+        return;
+      }
+      const r = await callMailScript(Object.assign({ action: 'cal_upsert' }, calEvent(a)));
+      await S.update('appointments', a.id, { gcal_event_id: r.id, gcal_synced_at: new Date().toISOString() });
+    } catch (e) { toast('Calendrier iPhone non mis à jour : ' + e.message, true); }
+  }
+
+  async function calRemove(a) {
+    if (!a || !a.gcal_event_id || !calReady()) return;
+    try { await callMailScript({ action: 'cal_delete', gcal_id: a.gcal_event_id }); } catch (e) { toast('Calendrier iPhone non mis à jour : ' + e.message, true); }
+  }
+
+  // Récupère le calendrier sur une période : applique les déplacements faits sur l'iPhone et repère les nouveaux rendez-vous.
+  async function calPull(from, to) {
+    if (!calReady()) return false;
+    const res = await callMailScript({ action: 'cal_list', from: from.toISOString(), to: to.toISOString() });
+    let changed = false;
+    const ext = {};
+    for (const ev of res.events || []) {
+      if (ev.crm_id) {
+        const a = S.data.appointments.find((x) => x.id === ev.crm_id);
+        if (!a || a.status === 'annule') continue;
+        const synced = a.gcal_synced_at ? new Date(a.gcal_synced_at).getTime() : 0;
+        const dur = Math.max(15, Math.round((new Date(ev.end) - new Date(ev.start)) / 60000));
+        const moved = new Date(ev.start).getTime() !== new Date(a.start_at).getTime() || dur !== Number(a.duration_min);
+        if (moved && new Date(ev.updated).getTime() > synced + 5000) {
+          await S.update('appointments', a.id, { start_at: new Date(ev.start).toISOString(), duration_min: dur, gcal_synced_at: new Date().toISOString() });
+          await logActivity(a.client_id, 'note', 'RDV déplacé depuis le calendrier iPhone : ' + fmtDate(ev.start) + ' à ' + fmtTime(ev.start));
+          changed = true;
+        }
+      } else if (!ev.all_day) ext[ev.id] = ev;
+    }
+    Object.keys(calExternal).forEach((id) => { const d = new Date(calExternal[id].start); if (d >= from && d < to && !ext[id]) { delete calExternal[id]; changed = true; } });
+    Object.keys(ext).forEach((id) => { if (!calExternal[id]) changed = true; });
+    Object.assign(calExternal, ext);
+    return changed;
+  }
+
+  // Devine le client d'après le titre noté sur l'iPhone (« Désembouage Dupuis » → Martine Dupuis)
+  function guessClient(text) {
+    const t = normName(text);
+    let best = null, score = 0;
+    S.data.clients.forEach((c) => {
+      if (c.status === 'indesirable') return;
+      const hits = String(c.name || '').split(/[\s,.-]+/).map(normName).filter((p) => p.length > 2 && t.includes(p)).length;
+      if (hits > score) { score = hits; best = c; }
+    });
+    return best;
+  }
+  const guessType = (text) => { const t = normName(text); return /desemb/.test(t) ? 'desembouage' : /entretien/.test(t) ? 'entretien' : /sav|depann|panne/.test(t) ? 'sav' : /visite|diag/.test(t) ? 'visite' : 'autre'; };
+
+  function extRow(ev) {
+    return '<div class="appt appt-ext"><div class="appt-time">' + esc(fmtTime(ev.start)) + '</div><div class="appt-main"><div class="appt-title">' + esc(ev.title || 'Sans titre') + '</div>' +
+      '<div class="appt-sub">Noté sur l’iPhone · à relier à un client</div></div>' +
+      '<button class="btn btn-ghost btn-sm" data-action="cal-link" data-id="' + esc(ev.id) + '">Relier</button></div>';
+  }
+
   // ================================================================ icônes
   const ICONS = {
     home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -657,10 +744,17 @@
       values: a || Object.assign({ type: 'visite', status: 'planifie', start_at: def.toISOString(), duration_min: 60, technician_id: S.user.id }, preset || {}),
       onSubmit: async (v) => {
         v.duration_min = Number(v.duration_min);
-        if (a) { await S.update('appointments', a.id, v); toast('Rendez-vous mis à jour'); warnWithdrawal(v.client_id, v.start_at); }
-        else {
+        if (a) {
+          const row = await S.update('appointments', a.id, v);
+          toast('Rendez-vous mis à jour'); warnWithdrawal(v.client_id, v.start_at);
+          calPush(row);
+        } else {
           if (!v.technician_id) v.technician_id = S.user.id;
+          // Rendez-vous noté sur l'iPhone et relié à un client : on reprend l'événement existant (pas de doublon)
+          const gcalId = preset && preset.gcal_event_id;
+          if (gcalId) { v.gcal_event_id = gcalId; delete calExternal[gcalId]; }
           const row = await S.insert('appointments', v);
+          calPush(row);
           await logActivity(v.client_id, 'note', 'RDV planifié : ' + APPT_TYPES[v.type] + ' le ' + fmtDate(v.start_at) + ' à ' + fmtTime(v.start_at));
           const c = client(v.client_id);
           // Un rendez-vous planifié pour un prospect le fait passer en « RDV confirmé »
@@ -669,7 +763,7 @@
           location.hash = '#/rdv/' + row.id;
         }
       },
-      onDelete: a && S.isAdmin() ? async () => { await S.remove('appointments', a.id); await revertRdvStatus(a.client_id); toast('Rendez-vous supprimé'); location.hash = '#/agenda'; } : null
+      onDelete: a && S.isAdmin() ? async () => { await calRemove(a); await S.remove('appointments', a.id); await revertRdvStatus(a.client_id); toast('Rendez-vous supprimé'); location.hash = '#/agenda'; } : null
     });
   }
 
@@ -1551,18 +1645,22 @@
         technicians().map((p) => '<option value="' + p.id + '"' + (techFilter === p.id ? ' selected' : '') + '>' + esc(p.full_name) + '</option>').join('') + '</select>';
     }
     html += '</div>';
-    if (!list.length && new Date(ymd(addDays(start, 6)) + 'T23:59') < new Date()) return html + '<section class="card">' + empty('Aucun rendez-vous cette semaine-là.') + '</section>';
-    html += '<div class="week">';
+    // Rendez-vous notés sur l'iPhone (calendrier « CRM Alpes Désembouage ») pas encore reliés à un client
+    const ext = calReady() ? Object.values(calExternal).filter((ev) => { const d = new Date(ev.start); return d >= start && d < end; }) : [];
+    if (calReady()) html += '<p class="cal-sync muted small">' + icon('calendar') + ' Synchronisé avec le calendrier iPhone <button class="link" data-action="cal-refresh">Actualiser</button></p>';
+    if (!list.length && !ext.length && new Date(ymd(addDays(start, 6)) + 'T23:59') < new Date()) return html + '<section class="card">' + empty('Aucun rendez-vous cette semaine-là.') + '</section>';
+    html += '<div class="week" data-from="' + start.toISOString() + '" data-to="' + end.toISOString() + '">';
     for (let i = 0; i < 7; i++) {
       const d = addDays(start, i);
       const items = list.filter((a) => sameDay(new Date(a.start_at), d));
+      const extItems = ext.filter((ev) => sameDay(new Date(ev.start), d)).sort((x, y) => x.start.localeCompare(y.start));
       const isToday = sameDay(d, new Date());
       const isPast = new Date(ymd(d) + 'T23:59') < new Date();
-      if (!items.length && !isToday && (i >= 5 || isPast)) continue; // jours vides passés et week-end vide masqués
+      if (!items.length && !extItems.length && !isToday && (i >= 5 || isPast)) continue; // jours vides passés et week-end vide masqués
       html += '<div class="day' + (isToday ? ' today' : '') + (isPast ? ' past' : '') + '">' +
         '<div class="day-head"><span>' + esc(fmtDay(d)) + '</span>' +
         (S.isAdmin() ? '<button class="icon-btn sm" data-action="new-appt-day" data-day="' + ymd(d) + '" aria-label="Ajouter un RDV">' + icon('plus') + '</button>' : '') + '</div>' +
-        (items.length ? items.map((a) => apptRow(a)).join('') : '<p class="day-empty">—</p>') + '</div>';
+        (items.length || extItems.length ? items.map((a) => apptRow(a)).join('') + extItems.map(extRow).join('') : '<p class="day-empty">—</p>') + '</div>';
     }
     html += '</div>';
     return html;
@@ -1807,6 +1905,17 @@
         '<div class="sig-editor" id="sig-editor" contenteditable="true">' + emailSignatureHtml() + '</div>' +
         '<div class="form-actions"><button class="btn btn-ghost" data-action="sig-default">Signature par défaut</button><button class="btn btn-primary" data-action="sig-save">Enregistrer la signature</button></div></div></section>';
 
+      // Synchronisation avec le calendrier iPhone (via Google)
+      const cc = calCfg(), owner = cc.profile_id ? profile(cc.profile_id) : null;
+      html += '<section class="card"><header class="card-head"><h3>Calendrier iPhone</h3>' + (calReady() ? '<span class="badge" style="--c:#1f9d55">Actif</span>' : '<span class="badge" style="--c:#8a94a3">Non réglé</span>') + '</header><div class="pad">' +
+        (!emailReady() ? '<p class="muted">Réglez d\'abord « Envoi des e-mails » : la synchronisation passe par le même script Google.</p>' :
+          calReady()
+            ? '<p>Les rendez-vous de <b>' + esc(owner ? owner.full_name : '?') + '</b> sont envoyés dans le calendrier <b>« CRM Alpes Désembouage »</b> de Google, affiché sur l\'iPhone. Les rendez-vous notés sur l\'iPhone dans ce calendrier apparaissent dans l\'agenda du CRM, à relier à un client.</p>' +
+              '<div class="btn-row" style="padding:8px 0 0"><button class="btn btn-ghost" data-action="cal-push-all">Envoyer mes rendez-vous à venir</button><button class="btn btn-danger-ghost" data-action="cal-disable">Désactiver</button></div>'
+            : '<ol class="steps-list"><li>Mettez à jour le script Google (nouvelle version avec le calendrier, voir crm/README.md).</li><li>Cliquez sur « Activer » : le calendrier « CRM Alpes Désembouage » est créé dans votre compte Google.</li><li>Sur l\'iPhone, affichez ce calendrier (voir le guide).</li></ol>' +
+              '<div class="btn-row" style="padding:8px 0 0"><button class="btn btn-primary" data-action="cal-enable">Activer pour mon profil (' + esc(S.user.full_name) + ')</button></div>') +
+        '</div></section>';
+
       // Notification « nouveau prospect » (application ntfy)
       const nt = S.data.settings.notify || {};
       html += '<section class="card"><header class="card-head"><h3>Alerte nouveau prospect</h3>' + (nt.ntfy_topic ? '<span class="badge" style="--c:#1f9d55">Active</span>' : '<span class="badge" style="--c:#8a94a3">Non réglée</span>') + '</header>' +
@@ -2017,6 +2126,15 @@
       render();
     }));
 
+    // Agenda affiché : on récupère le calendrier iPhone de la semaine (au plus une fois par minute)
+    const week = $('.week');
+    if (week && calReady() && Date.now() - (calPulled[week.dataset.from] || 0) > 60000) {
+      calPulled[week.dataset.from] = Date.now();
+      calPull(new Date(week.dataset.from), new Date(week.dataset.to))
+        .then((changed) => { if (changed && $('.week') && $('.week').dataset.from === week.dataset.from && !modal.open) render(); })
+        .catch((e) => toast('Calendrier iPhone indisponible : ' + e.message, true));
+    }
+
     const nextN = $('#next-quote-n');
     if (nextN) S.getQuoteCounter().then((n) => {
       const d = new Date();
@@ -2090,6 +2208,7 @@
       toast('Statut : ' + APPT_STATUS[to].label);
       render();
       const fresh = S.data.appointments.find((x) => x.id === a.id);
+      calPush(fresh); // statut (annulé, terminé…) répercuté sur le calendrier iPhone
       // Intervention terminée et rien d'encaissé : on propose directement l'encaissement.
       if (to === 'termine' && c && !S.data.payments.some((p) => p.appointment_id === a.id && p.status !== 'annule')) collectPayment(client(c.id), fresh);
       else if (el.dataset.tpl && c && c.phone) smsSheet(client(c.id), { appt: fresh }, el.dataset.tpl);
@@ -2265,6 +2384,45 @@
       const bytes = await guard(() => S.getQuotePdf(S.data.settings.cgv.path));
       window.open(URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), '_blank');
     },
+    'cal-link': (el) => {
+      const ev = calExternal[el.dataset.id];
+      if (!ev) return;
+      const text = (ev.title || '') + ' ' + (ev.description || '') + ' ' + (ev.location || '');
+      const c = guessClient(text);
+      const dur = Math.round((new Date(ev.end) - new Date(ev.start)) / 60000);
+      const durKey = Object.keys(DURATIONS).map(Number).reduce((best, k) => (Math.abs(k - dur) < Math.abs(best - dur) ? k : best), 60);
+      editAppointment(null, {
+        client_id: c ? c.id : '', start_at: ev.start, duration_min: durKey, type: guessType(text), status: 'confirme',
+        technician_id: calCfg().profile_id, notes: [ev.title, ev.description].filter(Boolean).join('\n'), gcal_event_id: ev.id
+      });
+      if (!c) setTimeout(() => toast('Client non reconnu : choisissez-le dans la liste (ou créez sa fiche d’abord).', true), 300);
+    },
+    'cal-refresh': async (el) => {
+      const w = $('.week');
+      el.disabled = true;
+      try {
+        await guard(() => calPull(new Date(w ? w.dataset.from : Date.now()), new Date(w ? w.dataset.to : Date.now() + 7 * 86400000)));
+        toast('Agenda synchronisé avec l’iPhone'); render();
+      } catch (e) { el.disabled = false; }
+    },
+    'cal-enable': async () => {
+      await guard(async () => {
+        await callMailScript({ action: 'cal_test' });
+        await S.saveSetting('calendar', { enabled: true, profile_id: S.user.id });
+      });
+      toast('Synchronisation activée pour ' + S.user.full_name); render();
+    },
+    'cal-disable': async (el) => {
+      if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer la désactivation ?'; return; }
+      await guard(() => S.saveSetting('calendar', Object.assign({}, calCfg(), { enabled: false })));
+      toast('Synchronisation désactivée'); render();
+    },
+    'cal-push-all': async (el) => {
+      const todo = S.data.appointments.filter((a) => calOwns(a) && a.status !== 'annule' && new Date(a.start_at) > addDays(new Date(), -1));
+      el.disabled = true;
+      for (let i = 0; i < todo.length; i++) { el.textContent = 'Envoi ' + (i + 1) + ' / ' + todo.length + '…'; await calPush(S.data.appointments.find((x) => x.id === todo[i].id)); }
+      toast(todo.length + ' rendez-vous envoyé(s) vers le calendrier iPhone'); render();
+    },
     'sms-relance': (el) => smsSheet(client(el.dataset.client), {}, 'relance_prospect'),
     'email': (el) => emailSheet(client(el.dataset.client), { subject: company().name }),
     'reminder': (el) => askReminder(client(el.dataset.client)),
@@ -2326,8 +2484,18 @@
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible' && S.user && S.mode === 'supabase' && !modal.open) {
       try { await S.loadAll(); render(); } catch (e) { /* hors ligne */ }
+      syncCalendarSoon();
     }
   });
+
+  // Rendez-vous déplacés sur l'iPhone : repris à l'ouverture de l'application (2 mois à venir, au plus toutes les 2 minutes)
+  let calLastBackground = 0;
+  function syncCalendarSoon() {
+    if (!S.user || !calReady() || Date.now() - calLastBackground < 120000) return;
+    calLastBackground = Date.now();
+    const from = addDays(new Date(), -1), to = addDays(new Date(), 60);
+    calPull(from, to).then((changed) => { if (changed && !modal.open) render(); }).catch(() => { /* silencieux en arrière-plan */ });
+  }
 
   // ================================================================ démarrage
   (async function start() {
@@ -2337,6 +2505,7 @@
       else if (S.user && !S.needPassword) await S.loadAll();
       if (S.needPassword) S.user = null;
       render();
+      syncCalendarSoon();
     } catch (e) {
       console.error(e);
       document.getElementById('app').innerHTML = '<div class="login"><div class="login-card"><h1>Erreur de démarrage</h1><p class="error">' + esc(e.message) + '</p></div></div>';
