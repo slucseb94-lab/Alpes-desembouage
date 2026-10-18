@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '15 — calendrier iPhone';
+  const APP_VERSION = '16 — calendrier iPhone';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -458,6 +458,8 @@
   // Dans l'autre sens : les rendez-vous notés sur l'iPhone dans ce calendrier apparaissent dans l'agenda du CRM, à relier à un client.
   const calCfg = () => S.data.settings.calendar || {};
   const calReady = () => emailReady() && !!calCfg().enabled && !!calCfg().profile_id;
+  // Lecture du calendrier (rendez-vous perso compris) : réservée au propriétaire du calendrier, jamais aux autres utilisateurs
+  const calMine = () => calReady() && !!S.user && S.user.id === calCfg().profile_id;
   const calOwns = (a) => calReady() && a.technician_id === calCfg().profile_id;
   let calExternal = {}; // événements notés sur l'iPhone, pas encore reliés au CRM
   const calPulled = {};
@@ -497,7 +499,7 @@
 
   // Récupère le calendrier sur une période : applique les déplacements faits sur l'iPhone et repère les nouveaux rendez-vous.
   async function calPull(from, to) {
-    if (!calReady()) return false;
+    if (!calMine()) return false;
     const res = await callMailScript({ action: 'cal_list', from: from.toISOString(), to: to.toISOString() });
     let changed = false;
     const ext = {};
@@ -534,10 +536,11 @@
   }
   const guessType = (text) => { const t = normName(text); return /desemb/.test(t) ? 'desembouage' : /entretien/.test(t) ? 'entretien' : /sav|depann|panne/.test(t) ? 'sav' : /visite|diag/.test(t) ? 'visite' : 'autre'; };
 
+  // Rendez-vous noté sur l'iPhone : affiché comme créneau perso « occupé » (visible uniquement par son propriétaire)
   function extRow(ev) {
-    return '<div class="appt appt-ext"><div class="appt-time">' + esc(fmtTime(ev.start)) + '</div><div class="appt-main"><div class="appt-title">' + esc(ev.title || 'Sans titre') + '</div>' +
-      '<div class="appt-sub">Noté sur l’iPhone · à relier à un client</div></div>' +
-      '<button class="btn btn-ghost btn-sm" data-action="cal-link" data-id="' + esc(ev.id) + '">Relier</button></div>';
+    const end = new Date(ev.end);
+    return '<div class="appt appt-ext"><div class="appt-time">' + esc(fmtTime(ev.start)) + '</div><div class="appt-main"><div class="appt-title">' + esc(ev.title || 'Occupé') + '</div>' +
+      '<div class="appt-sub">Perso · occupé jusqu’à ' + esc(fmtTime(end.toISOString())) + ' · <button class="link" data-action="cal-link" data-id="' + esc(ev.id) + '">C’est un client ?</button></div></div></div>';
   }
 
   // ================================================================ icônes
@@ -1646,8 +1649,8 @@
     }
     html += '</div>';
     // Rendez-vous notés sur l'iPhone (calendrier « CRM Alpes Désembouage ») pas encore reliés à un client
-    const ext = calReady() ? Object.values(calExternal).filter((ev) => { const d = new Date(ev.start); return d >= start && d < end; }) : [];
-    if (calReady()) html += '<p class="cal-sync muted small">' + icon('calendar') + ' Synchronisé avec le calendrier iPhone <button class="link" data-action="cal-refresh">Actualiser</button></p>';
+    const ext = calMine() ? Object.values(calExternal).filter((ev) => { const d = new Date(ev.start); return d >= start && d < end; }) : [];
+    if (calMine()) html += '<p class="cal-sync muted small">' + icon('calendar') + ' Synchronisé avec le calendrier iPhone (vos rendez-vous perso apparaissent en gris, visibles par vous seul) <button class="link" data-action="cal-refresh">Actualiser</button></p>';
     if (!list.length && !ext.length && new Date(ymd(addDays(start, 6)) + 'T23:59') < new Date()) return html + '<section class="card">' + empty('Aucun rendez-vous cette semaine-là.') + '</section>';
     html += '<div class="week" data-from="' + start.toISOString() + '" data-to="' + end.toISOString() + '">';
     for (let i = 0; i < 7; i++) {
@@ -2128,7 +2131,7 @@
 
     // Agenda affiché : on récupère le calendrier iPhone de la semaine (au plus une fois par minute)
     const week = $('.week');
-    if (week && calReady() && Date.now() - (calPulled[week.dataset.from] || 0) > 60000) {
+    if (week && calMine() && Date.now() - (calPulled[week.dataset.from] || 0) > 60000) {
       calPulled[week.dataset.from] = Date.now();
       calPull(new Date(week.dataset.from), new Date(week.dataset.to))
         .then((changed) => { if (changed && $('.week') && $('.week').dataset.from === week.dataset.from && !modal.open) render(); })
@@ -2455,7 +2458,7 @@
       await logActivity(p.client_id, 'note', 'Paiement par carte reçu : ' + fmtMoney2(p.amount) + ' (' + p.description + ')');
       render();
     },
-    'logout': async () => { await S.signOut(); if (S.mode === 'demo') await S.loadAll(); location.hash = '#/'; render(); }
+    'logout': async () => { calExternal = {}; await S.signOut(); if (S.mode === 'demo') await S.loadAll(); location.hash = '#/'; render(); }
   };
 
   document.addEventListener('click', (e) => {
@@ -2491,7 +2494,7 @@
   // Rendez-vous déplacés sur l'iPhone : repris à l'ouverture de l'application (2 mois à venir, au plus toutes les 2 minutes)
   let calLastBackground = 0;
   function syncCalendarSoon() {
-    if (!S.user || !calReady() || Date.now() - calLastBackground < 120000) return;
+    if (!S.user || !calMine() || Date.now() - calLastBackground < 120000) return;
     calLastBackground = Date.now();
     const from = addDays(new Date(), -1), to = addDays(new Date(), 60);
     calPull(from, to).then((changed) => { if (changed && !modal.open) render(); }).catch(() => { /* silencieux en arrière-plan */ });

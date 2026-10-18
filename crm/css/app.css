@@ -423,3 +423,4 @@ dialog#modal::backdrop { background: rgba(13, 30, 50, 0.45); }
 .cal-sync .ico { width: 16px; height: 16px; }
 .appt-ext { border-left: 3px dashed #8a94a3; background: #fafbfc; }
 .appt-ext .appt-title { color: var(--muted); }
+.appt-ext .appt-sub .link { font-size: 12px; padding: 0; }
