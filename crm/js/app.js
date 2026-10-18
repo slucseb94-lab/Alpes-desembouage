@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '18 — factures';
+  const APP_VERSION = '19 — publicité';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -1378,6 +1378,85 @@
     return html;
   }
 
+  // ================================================================ publicité (Google Ads / Facebook) et origine des prospects
+  const ACQ_LABELS = { 'google-ads': 'Publicité Google Ads', 'facebook-ads': 'Publicité Facebook / Instagram', google: 'Recherche Google (gratuit)', 'fiche-google': 'Fiche Google',
+    facebook: 'Facebook', instagram: 'Instagram', direct: 'Accès direct', 'autre-moteur': 'Autre moteur de recherche' };
+  const acqLabel = (a) => (a ? ACQ_LABELS[a] || a : '');
+  const monthKey = (d) => String(d || '').slice(0, 7);
+  const monthLabel = (k) => { const [y, m] = k.split('-').map(Number); const s = new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }); return s.charAt(0).toUpperCase() + s.slice(1); };
+  const isGoogleAds = (c) => c.acquisition === 'google-ads';
+  const isFacebookAds = (c) => c.acquisition === 'facebook-ads' || c.source === 'Facebook / Instagram (publicité)';
+
+  // Chiffre facturé (factures émises moins avoirs) et clients signés pour une liste de prospects
+  function revenueFor(clientIds) {
+    const set = new Set(clientIds);
+    const billed = S.data.invoices.filter((i) => set.has(i.client_id) && i.status !== 'brouillon').reduce((s, i) => s + Number(i.total_ttc || 0), 0);
+    const won = S.data.clients.filter((c) => set.has(c.id) && (c.status === 'client' || S.data.quotes.some((q) => q.client_id === c.id && q.status === 'accepte'))).length;
+    return { billed, won };
+  }
+
+  function adRow(label, spend, clicks, prospects, rev) {
+    const cpp = prospects ? spend / prospects : null, cpc = rev.won ? spend / rev.won : null;
+    const roi = spend ? rev.billed / spend : null;
+    return '<tr><td>' + esc(label) + '</td><td>' + (spend ? esc(fmtMoney2(spend)) : '—') + '</td><td>' + (clicks != null ? clicks : '—') + '</td><td><b>' + prospects + '</b></td>' +
+      '<td>' + (cpp != null ? esc(fmtMoney2(cpp)) : '—') + '</td><td>' + rev.won + '</td><td>' + (cpc != null ? esc(fmtMoney2(cpc)) : '—') + '</td>' +
+      '<td>' + (rev.billed ? esc(fmtMoney2(rev.billed)) : '—') + '</td><td>' + (roi != null && rev.billed ? '<b class="' + (roi >= 1 ? 'ok' : 'warn') + '">× ' + roi.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + '</b>' : '—') + '</td></tr>';
+  }
+
+  function viewAds(params) {
+    if (!S.isAdmin()) return pageHead('Publicité') + empty('Réservé au gérant.');
+    const nb = [3, 6, 12].includes(Number(params.get('m'))) ? Number(params.get('m')) : 6;
+    const months = [];
+    for (let i = 0; i < nb; i++) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); months.push(ymd(d).slice(0, 7)); }
+    const stats = S.data.ad_stats || [];
+    const spendOf = (p, m) => stats.filter((r) => r.platform === p && monthKey(r.day) === m).reduce((s, r) => s + Number(r.cost || 0), 0);
+    const clicksOf = (p, m) => stats.filter((r) => r.platform === p && monthKey(r.day) === m).reduce((s, r) => s + Number(r.clicks || 0), 0);
+    const lastSync = stats.filter((r) => r.platform === 'google').map((r) => r.updated_at).sort().pop();
+
+    let html = pageHead('Publicité', 'Ce que rapportent vos publicités Google et Facebook');
+    html += '<div class="chips" style="margin-bottom:12px">' + [3, 6, 12].map((m) => '<a class="chip' + (m === nb ? ' on' : '') + '" href="#/pub?m=' + m + '">' + m + ' mois</a>').join('') + '</div>';
+
+    // Synthèse de la période
+    const inPeriod = (c) => months.includes(monthKey(c.created_at));
+    const gClients = S.data.clients.filter((c) => inPeriod(c) && isGoogleAds(c)), fClients = S.data.clients.filter((c) => inPeriod(c) && isFacebookAds(c));
+    const gSpend = months.reduce((s, m) => s + spendOf('google', m), 0), fSpend = months.reduce((s, m) => s + spendOf('facebook', m), 0);
+    const gRev = revenueFor(gClients.map((c) => c.id)), fRev = revenueFor(fClients.map((c) => c.id));
+    html += '<div class="kpis">' +
+      kpi('Dépense pub', fmtMoney(gSpend + fSpend), '#/pub', 'Google ' + fmtMoney(gSpend) + ' · Facebook ' + fmtMoney(fSpend)) +
+      kpi('Prospects pub', gClients.length + fClients.length, '#/pub', 'Google ' + gClients.length + ' · Facebook ' + fClients.length) +
+      kpi('Coût par prospect', gClients.length + fClients.length ? fmtMoney((gSpend + fSpend) / (gClients.length + fClients.length)) : '—', '#/pub', 'toutes pubs confondues') +
+      kpi('Facturé (prospects pub)', fmtMoney(gRev.billed + fRev.billed), '#/pub', (gSpend + fSpend) ? 'soit × ' + ((gRev.billed + fRev.billed) / (gSpend + fSpend)).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' la dépense' : '') + '</div>';
+
+    const head = '<tr><th>Mois</th><th>Dépense</th><th>Clics</th><th>Prospects</th><th>Coût / prospect</th><th>Clients</th><th>Coût / client</th><th>Facturé</th><th>Rentabilité</th></tr>';
+    const table = (platform, isOf, title, note) => {
+      const rows = months.map((m) => {
+        const cl = S.data.clients.filter((c) => monthKey(c.created_at) === m && isOf(c));
+        return adRow(monthLabel(m), spendOf(platform, m), platform === 'google' ? clicksOf('google', m) : null, cl.length, revenueFor(cl.map((c) => c.id)));
+      }).join('');
+      return '<section class="card span-2"><header class="card-head"><h3>' + title + '</h3>' + (note || '') + '</header><div class="table-wrap"><table class="ads">' + head + rows + '</table></div></section>';
+    };
+    html += '<div class="grid-2">';
+    html += table('google', isGoogleAds, 'Google Ads', lastSync ? '<span class="muted small">Synchronisé ' + esc(relTime(lastSync)) + '</span>' : '<a class="link" href="#/reglages">Connecter Google Ads</a>');
+    html += table('facebook', isFacebookAds, 'Facebook / Instagram', '<button class="btn btn-ghost btn-sm" data-action="fb-spend">Saisir une dépense</button>');
+
+    // Origine de tous les prospects
+    const all = S.data.clients.filter(inPeriod);
+    const bySrc = {};
+    all.forEach((c) => {
+      const k = isGoogleAds(c) ? 'Publicité Google Ads' : isFacebookAds(c) ? 'Publicité Facebook / Instagram' : c.source === 'Site internet' ? 'Site internet — ' + (acqLabel(c.acquisition) || 'origine inconnue') : (c.source || 'Non renseignée');
+      (bySrc[k] = bySrc[k] || []).push(c.id);
+    });
+    const srcRows = Object.entries(bySrc).sort((a, b) => b[1].length - a[1].length).map(([k, ids]) => {
+      const r = revenueFor(ids);
+      return '<tr><td>' + esc(k) + '</td><td><b>' + ids.length + '</b></td><td>' + r.won + '</td><td>' + (r.billed ? esc(fmtMoney2(r.billed)) : '—') + '</td></tr>';
+    }).join('');
+    html += '<section class="card span-2"><header class="card-head"><h3>D’où viennent vos prospects</h3><span class="muted small">' + nb + ' derniers mois</span></header>' +
+      '<div class="table-wrap"><table class="ads"><tr><th>Origine</th><th>Prospects</th><th>Clients</th><th>Facturé</th></tr>' + (srcRows || '<tr><td colspan="4">Aucun prospect sur la période.</td></tr>') + '</table></div>' +
+      '<p class="muted small pad">« Clients » : prospects devenus clients ou ayant accepté un devis. « Facturé » : factures émises pour ces clients (avoirs déduits). L’origine « Publicité Google Ads » est connue pour les demandes faites sur le site depuis une annonce.</p></section>';
+    html += '</div>';
+    return html;
+  }
+
   // ================================================================ paiements
   function qrSvg(text) {
     if (!window.qrcode) return '<p class="muted small">QR code indisponible (connexion internet nécessaire).</p>';
@@ -1954,6 +2033,7 @@
 
     html += '<div class="grid-2">';
     html += card('Coordonnées', '<div class="infos">' + info('Téléphone', c.phone) + info('E-mail', c.email) + info('Adresse', fullAddress(c)) +
+      info('Origine', [c.source, acqLabel(c.acquisition)].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' — ')) +
       info('Technicien référent', c.assigned_to && profile(c.assigned_to) ? profile(c.assigned_to).full_name : '') + '</div>' +
       (c.notes ? '<p class="notes">' + esc(c.notes) + '</p>' : ''));
     html += card('Installation', '<div class="infos">' + info('Énergie', c.heating_type) + info('Chaudière / PAC', c.boiler_brand) + info('Émetteurs', c.emitter_type) +
@@ -2080,6 +2160,7 @@
       '<div class="btn-row">' +
       (S.isAdmin() ? '<a class="btn btn-ghost" href="#/equipe">' + icon('team') + 'Équipe</a>' : '') +
       (S.isAdmin() ? '<a class="btn btn-ghost" href="#/factures">' + icon('doc') + 'Factures</a>' : '') +
+      (S.isAdmin() ? '<a class="btn btn-ghost" href="#/pub">' + icon('chart') + 'Publicité</a>' : '') +
       (S.mode === 'supabase' ? '<button class="btn btn-ghost" data-action="change-password">Changer mon mot de passe</button>' : '') +
       (S.isAdmin() ? '<button class="btn btn-ghost" data-action="export-csv">Exporter les clients (CSV)</button>' : '') +
       (S.mode === 'demo' && S.isAdmin() ? '<button class="btn btn-danger-ghost" data-action="reset-demo">Réinitialiser la démo</button>' : '') +
@@ -2149,6 +2230,14 @@
         '<p class="muted small">Pour reprendre votre signature Gmail : dans Gmail, <b>Paramètres → Voir tous les paramètres → Signature</b>, sélectionnez-la entièrement, copiez (Ctrl + C), puis collez-la dans le cadre ci-dessous (Ctrl + V). La mise en forme et le logo sont conservés.</p>' +
         '<div class="sig-editor" id="sig-editor" contenteditable="true">' + emailSignatureHtml() + '</div>' +
         '<div class="form-actions"><button class="btn btn-ghost" data-action="sig-default">Signature par défaut</button><button class="btn btn-primary" data-action="sig-save">Enregistrer la signature</button></div></div></section>';
+
+      // Publicité : clé pour le script Google Ads (envoi automatique des dépenses)
+      const ads = S.data.settings.ads || {}, lastAd = (S.data.ad_stats || []).filter((r) => r.platform === 'google').map((r) => r.updated_at).sort().pop();
+      html += '<section class="card"><header class="card-head"><h3>Publicité (Google Ads)</h3>' + (lastAd ? '<span class="badge" style="--c:#1f9d55">Connecté</span>' : '<span class="badge" style="--c:#8a94a3">Non connecté</span>') + '</header><div class="pad">' +
+        '<p class="muted small">Un petit script installé dans votre compte Google Ads envoie chaque nuit vos dépenses et clics au CRM (guide : crm/README.md → « Google Ads »).' + (lastAd ? ' Dernier envoi : ' + esc(relTime(lastAd)) + '.' : '') + '</p>' +
+        '<label class="field"><span>Clé secrète (à coller dans le script Google Ads)</span><div class="inline"><input value="' + esc(ads.secret || '') + '" readonly>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-action="copy-field">' + icon('copy') + '</button></div></label>' +
+        '<div class="btn-row" style="padding:8px 0 0">' + (ads.secret ? '' : '<button class="btn btn-primary" data-action="ads-secret">Générer la clé</button>') + '<a class="btn btn-ghost" href="#/pub">' + icon('chart') + 'Voir le tableau Publicité</a></div></div></section>';
 
       // Synchronisation avec le calendrier iPhone (via Google)
       const cc = calCfg(), owner = cc.profile_id ? profile(cc.profile_id) : null;
@@ -2221,6 +2310,7 @@
       else if (section === 'rdv' && parts[1]) html = viewAppointment(parts[1]);
       else if (section === 'devis') html = viewQuoteEditor(parts[1] === 'nouveau' ? null : parts[1], params);
       else if (section === 'factures') html = viewInvoices(params);
+      else if (section === 'pub') html = viewAds(params);
       else if (section === 'facture') html = viewInvoiceEditor(parts[1] === 'nouvelle' ? null : parts[1], params);
       else if (section === 'site' && S.isAdmin()) html = viewSite(params);
       else if (section === 'equipe') html = viewTeam();
@@ -2238,7 +2328,7 @@
     window.scrollTo(0, sameRoute ? scroll : 0);
     document.querySelectorAll('.nav a').forEach((a) => {
       const target = a.getAttribute('href').slice(2).split('/')[0];
-      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'site', 'equipe', 'reglages', 'rdv', 'devis', 'factures', 'facture'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis') || (target === 'factures' && section === 'facture'));
+      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'site', 'equipe', 'reglages', 'rdv', 'devis', 'factures', 'facture', 'pub'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis') || (target === 'factures' && section === 'facture'));
     });
     bindView();
   }
@@ -2246,7 +2336,7 @@
   function renderShell() {
     const admin = S.isAdmin();
     const items = [['', 'home', 'Accueil'], ['agenda', 'calendar', 'Agenda'], ['clients', 'users', 'Clients']];
-    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['factures', 'doc', 'Factures'], ['site', 'chart', 'Site web'], ['equipe', 'team', 'Équipe']);
+    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['factures', 'doc', 'Factures'], ['pub', 'chart', 'Publicité'], ['site', 'chart', 'Site web'], ['equipe', 'team', 'Équipe']);
     items.push(['reglages', 'settings', 'Réglages']);
     document.getElementById('app').innerHTML =
       '<aside class="sidebar"><div class="brand"><img src="icons/icon.svg" alt=""><div><b>Alpes Désembouage</b><span>CRM</span></div></div>' +
@@ -2514,6 +2604,20 @@
       // Pas joint : on propose tout de suite de programmer le prochain rappel.
       if (type === 'joint') toast(label + ' — noté');
       else askReminder(client(c.id), label + ' — noté. Quand le recontacter ?');
+    },
+    'ads-secret': async () => {
+      const secret = Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, '0')).join('');
+      await guard(() => S.saveSetting('ads', Object.assign({}, S.data.settings.ads || {}, { secret })));
+      toast('Clé générée : copiez-la dans le script Google Ads'); render();
+    },
+    'fb-spend': () => {
+      const d = new Date(); d.setDate(1);
+      openForm({
+        title: 'Dépense Facebook / Instagram',
+        fields: [{ name: 'month', label: 'Mois', type: 'month', required: true, half: true }, { name: 'cost', label: 'Montant dépensé (€)', type: 'number', step: '0.01', required: true, half: true, inputmode: 'decimal' }],
+        values: { month: ymd(d).slice(0, 7) },
+        onSubmit: async (v) => { await S.saveAdSpend('facebook', v.month + '-01', v.cost); toast('Dépense enregistrée'); }
+      });
     },
     'qmail-reset': async () => { await guard(() => S.saveSetting('quote_email_templates', {})); toast('Textes par défaut rétablis'); render(); },
     'sig-save': async () => {

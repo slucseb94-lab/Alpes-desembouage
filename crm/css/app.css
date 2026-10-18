@@ -68,7 +68,7 @@ main#view {
 .fab .ico { width: 26px; height: 26px; stroke-width: 2.5; }
 
 /* sur mobile, la barre du bas n'affiche pas « Équipe » (accessible via Réglages) */
-.nav a[href="#/equipe"], .nav a[href="#/factures"] { display: none; }
+.nav a[href="#/equipe"], .nav a[href="#/factures"], .nav a[href="#/pub"] { display: none; }
 
 @media (min-width: 900px) {
   .sidebar {
@@ -80,7 +80,7 @@ main#view {
   .brand b { display: block; font-family: var(--font-head); font-size: 14px; color: var(--blue-900); }
   .brand span { font-size: 12px; color: var(--muted); }
   .nav { flex-direction: column; height: auto; gap: 2px; }
-  .nav a, .nav a[href="#/equipe"], .nav a[href="#/factures"] { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: flex; }
+  .nav a, .nav a[href="#/equipe"], .nav a[href="#/factures"], .nav a[href="#/pub"] { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: flex; }
   .nav a:hover { background: var(--bg); }
   .nav a.on { background: var(--blue-50); }
   .demo-flag { display: block; margin-top: auto; padding: 8px 12px; border-radius: 8px; background: #fff4ec; color: #a8470f; font-size: 12px; font-weight: 600; text-align: center; }
@@ -424,3 +424,12 @@ dialog#modal::backdrop { background: rgba(13, 30, 50, 0.45); }
 .appt-ext { border-left: 3px dashed #8a94a3; background: #fafbfc; }
 .appt-ext .appt-title { color: var(--muted); }
 .appt-ext .appt-sub .link { font-size: 12px; padding: 0; }
+
+/* ------------------------------------------------------------ publicité */
+.table-wrap { overflow-x: auto; padding: 0 16px 14px; }
+table.ads { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+table.ads th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.ads td { padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.ads tr:last-child td { border-bottom: 0; }
+table.ads td:first-child { font-weight: 600; }
+.ok { color: var(--ok); }

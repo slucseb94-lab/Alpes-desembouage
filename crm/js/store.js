@@ -1,7 +1,7 @@
 // Couche de données : même interface en mode démo (localStorage) et en mode réel (Supabase).
 (function () {
   const cfg = window.CRM_CONFIG || {};
-  const TABLES = ['profiles', 'clients', 'activities', 'quotes', 'appointments', 'payments', 'invoices'];
+  const TABLES = ['profiles', 'clients', 'activities', 'quotes', 'appointments', 'payments', 'invoices', 'ad_stats'];
   const DEMO_KEY = 'crm-demo-v1';
   const DEMO_USER_KEY = 'crm-demo-user';
 
@@ -15,7 +15,7 @@
     sb: null,
     user: null,
     needPassword: false,
-    data: { profiles: [], clients: [], activities: [], quotes: [], appointments: [], payments: [], invoices: [], settings: {} },
+    data: { profiles: [], clients: [], activities: [], quotes: [], appointments: [], payments: [], invoices: [], ad_stats: [], settings: {} },
     isAdmin() { return !!this.user && this.user.role === 'admin'; }
   };
 
@@ -27,15 +27,16 @@
     if (!demoDb || !demoDb.clients) { demoDb = seed(); demoSave(); }
     if (!demoDb.payments) { demoDb.payments = []; demoSave(); }
     if (!demoDb.invoices) { demoDb.invoices = []; demoSave(); }
+    if (!demoDb.ad_stats) { demoDb.ad_stats = []; demoSave(); }
   }
   function demoSave() { lsSet(DEMO_KEY, JSON.stringify(demoDb)); }
 
   // Reproduit en local les règles d'accès appliquées par Supabase (voir supabase/schema.sql).
   function demoVisible() {
     const db = demoDb, u = Store.user;
-    if (!u) return { profiles: db.profiles, clients: [], activities: [], quotes: [], appointments: [], payments: [], invoices: [] };
+    if (!u) return { profiles: db.profiles, clients: [], activities: [], quotes: [], appointments: [], payments: [], invoices: [], ad_stats: [] };
     if (u.role === 'admin') {
-      return { profiles: db.profiles, clients: db.clients, activities: db.activities, quotes: db.quotes, appointments: db.appointments, payments: db.payments, invoices: db.invoices };
+      return { profiles: db.profiles, clients: db.clients, activities: db.activities, quotes: db.quotes, appointments: db.appointments, payments: db.payments, invoices: db.invoices, ad_stats: db.ad_stats };
     }
     const appointments = db.appointments.filter((a) => a.technician_id === u.id);
     const apptIds = new Set(appointments.map((a) => a.id));
@@ -48,7 +49,8 @@
       quotes: [],
       appointments,
       payments: db.payments.filter((p) => p.created_by === u.id || apptIds.has(p.appointment_id)),
-      invoices: []
+      invoices: [],
+      ad_stats: []
     };
   }
 
@@ -219,6 +221,19 @@
     const { data, error } = await this.sb.rpc('next_quote_reference');
     if (error) throw new Error('Numérotation impossible : ' + error.message);
     return data;
+  };
+
+  // ---------------------------------------------------------------- publicité (dépense saisie à la main, ex. Facebook par mois)
+  Store.saveAdSpend = async function (platform, day, cost, campaign) {
+    const row = { day, platform, campaign: campaign || 'Saisie manuelle', clicks: 0, impressions: 0, cost: Number(cost) || 0, conversions: 0, updated_at: new Date().toISOString() };
+    if (this.mode === 'demo') {
+      demoDb.ad_stats = demoDb.ad_stats.filter((r) => !(r.day === day && r.platform === platform && r.campaign === row.campaign)).concat([row]);
+      demoSave();
+    } else {
+      const { error } = await this.sb.from('ad_stats').upsert(row, { onConflict: 'day,platform,campaign' });
+      if (error) throw new Error(error.message);
+    }
+    this.data.ad_stats = this.data.ad_stats.filter((r) => !(r.day === day && r.platform === platform && r.campaign === row.campaign)).concat([row]);
   };
 
   // ---------------------------------------------------------------- factures et avoirs

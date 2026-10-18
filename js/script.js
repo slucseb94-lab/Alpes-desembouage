@@ -36,7 +36,8 @@ async function sendToCrm(data) {
       p_phone: data.get('phone') || '',
       p_city: data.get('city') || '',
       p_message: data.get('message') || '',
-      p_honeypot: data.get('_gotcha') || ''
+      p_honeypot: data.get('_gotcha') || '',
+      p_channel: window.adSource || '' // « google-ads », « google », « facebook », « direct »… (voir js/tracker.js)
     })
   });
   return response.ok;

@@ -127,6 +127,22 @@ dans l'agenda du CRM avec un bouton **« Relier »** (au client), et un rendez-v
 5. iPhone → Réglages → Calendrier → Comptes → Gmail → activer **Calendriers**.
    Puis Réglages → Calendrier → **Calendrier par défaut** → « CRM Alpes Désembouage » (pour que les nouveaux rendez-vous y soient notés).
 
+## Google Ads (dépenses et rentabilité dans le CRM)
+
+Un script installé dans le compte Google Ads envoie chaque nuit les clics, impressions et dépenses au CRM
+(onglet **Publicité**). Les demandes faites sur le site depuis une annonce sont repérées automatiquement
+(origine « Publicité Google Ads » sur la fiche), ce qui donne le coût par prospect, par client et la rentabilité.
+
+1. Supabase → SQL Editor : exécuter `supabase/publicite.sql`.
+2. CRM → Réglages → **Publicité (Google Ads)** → « Générer la clé », puis copier la clé.
+3. Google Ads → **Outils** (clé à molette) → **Actions groupées** → **Scripts** → bouton **+** → **Nouveau script** :
+   coller `google-ads-script/envoi-stats-crm.js`, remplacer `COLLER_ICI_LA_CLE` par la clé, enregistrer.
+4. **Autoriser** (le script demande l'accès à votre compte Google Ads et aux services externes), puis **Exécuter** :
+   le journal doit afficher « Envoyé au CRM : … ligne(s) ».
+5. Dans la liste des scripts, colonne **Fréquence** → **Tous les jours**, vers 6 h.
+
+Les dépenses Facebook / Instagram se saisissent à la main, par mois, dans l'onglet Publicité.
+
 ## Prospects des publicités Facebook / Instagram (via Make.com)
 
 Chaque prospect qui remplit un formulaire de publicité Facebook / Instagram (« Lead Ads ») est créé

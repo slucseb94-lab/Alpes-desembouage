@@ -52,8 +52,11 @@
 
   function source() {
     try {
-      var utm = new URLSearchParams(location.search).get('utm_source');
-      if (utm) return utm.toLowerCase();
+      var params = new URLSearchParams(location.search);
+      // Clic sur une publicité Google Ads (marquage automatique gclid / gbraid / wbraid)
+      if (params.get('gclid') || params.get('gbraid') || params.get('wbraid')) return 'google-ads';
+      var utm = params.get('utm_source');
+      if (utm) return (/google/i.test(utm) && /cpc|ppc|paid|ads/i.test(params.get('utm_medium') || '')) ? 'google-ads' : utm.toLowerCase();
       if (!document.referrer) return 'direct';
       var host = new URL(document.referrer).hostname.replace(/^www\./, '');
       if (host === location.hostname.replace(/^www\./, '')) return 'direct';
@@ -68,6 +71,14 @@
   var timer = null;
   var device = window.innerWidth < 768 ? 'mobile' : 'desktop';
   var from = source();
+  // Le site a plusieurs pages : on garde l'origine de l'arrivée sur le site pendant toute la visite
+  // (information non nominative, conservée seulement le temps de l'onglet).
+  try {
+    var landing = sessionStorage.getItem('ad-landing-source');
+    if (from === 'direct' && landing) from = landing;
+    else if (from !== 'direct') sessionStorage.setItem('ad-landing-source', from);
+  } catch (e) {}
+  window.adSource = from; // transmis avec le formulaire de contact pour connaître l'origine du prospect
 
   function send(path, body) {
     return fetch(API + path, {
