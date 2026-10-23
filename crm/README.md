@@ -127,6 +127,28 @@ dans l'agenda du CRM avec un bouton **« Relier »** (au client), et un rendez-v
 5. iPhone → Réglages → Calendrier → Comptes → Gmail → activer **Calendriers**.
    Puis Réglages → Calendrier → **Calendrier par défaut** → « CRM Alpes Désembouage » (pour que les nouveaux rendez-vous y soient notés).
 
+## Sauvegarde hebdomadaire (Google Drive)
+
+Chaque semaine, le script Google enregistre une copie complète du CRM dans le Drive du gérant
+(« CRM Alpes Désembouage / Sauvegardes », 12 dernières conservées). Chaque facture émise est aussi
+archivée en PDF dans « CRM Alpes Désembouage / Factures / AAAA ». En cas d'échec, un e-mail d'alerte est envoyé.
+
+1. Supabase → SQL Editor : exécuter `supabase/sauvegarde.sql`.
+2. CRM → Réglages → **Sauvegarde** → « Générer une clé de sauvegarde » → copier la clé (affichée une seule fois).
+3. script.google.com → projet du CRM :
+   - remplacer le code par `google-apps-script/envoi-mail.gs` : remettre la clé e-mail (`COLLER_ICI_LA_CLE`)
+     **et** la clé de sauvegarde (`COLLER_ICI_LA_CLE_DE_SAUVEGARDE`) ;
+   - remplacer `appsscript.json` par `google-apps-script/appsscript.json` (ajout des droits Drive et « services externes ») ;
+   - enregistrer, choisir la fonction **`sauvegardeHebdo`** dans la liste, cliquer **▷ Exécuter** et **autoriser** :
+     le journal doit afficher « Sauvegarde OK … » et le fichier apparaît dans le Drive ;
+   - **Déclencheurs** (icône réveil, à gauche) → **Ajouter un déclencheur** : fonction `sauvegardeHebdo`,
+     source « Déclencheur temporel », « Minuteur hebdomadaire », lundi, entre 2 h et 3 h → Enregistrer ;
+   - **Déployer → Gérer les déploiements → crayon → Nouvelle version → Déployer** (pour l'archivage des factures).
+4. Le CRM affiche la date de la dernière sauvegarde dans Réglages → Sauvegarde.
+
+**Restauration** : en cas de problème, le fichier JSON contient toutes les données ; la restauration se fait avec
+l'aide d'un développeur (import dans Supabase).
+
 ## Google Ads (dépenses et rentabilité dans le CRM)
 
 Un script installé dans le compte Google Ads envoie chaque nuit les clics, impressions et dépenses au CRM

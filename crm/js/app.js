@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '19 — publicité';
+  const APP_VERSION = '20 — sauvegardes';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -1276,6 +1276,11 @@
     await S.putFile(path, bytes);
     const row = await S.update('invoices', inv.id, { pdf_path: path });
     await logActivity(inv.client_id, 'note', invTitle(row) + ' émis' + (row.kind === 'avoir' ? '' : 'e') + ' (' + fmtMoney2(row.total_ttc) + ' TTC)');
+    // Copie d'archive dans le Google Drive (dossier « CRM Alpes Désembouage / Factures / AAAA »), sans bloquer
+    if (emailReady()) {
+      bytesToBase64(bytes).then((b64) => callMailScript({ action: 'drive_save', folder: 'Factures/' + String(row.issue_date || '').slice(0, 4), name: invoiceFileName(row), type: 'application/pdf', base64: b64 }))
+        .catch(() => toast('Facture non archivée dans le Drive : mettez à jour le script Google (version 4).', true));
+    }
     return row;
   }
 
@@ -1294,8 +1299,12 @@
     const pay = isAvoir ? '' : inv.paid_at
       ? 'Elle a bien été réglée le ' + fmtDate(inv.paid_at) + ', merci !'
       : 'Elle est payable à réception, par virement bancaire' + (co.iban || bank.iban ? ' (IBAN ' + (bank.iban || co.iban) + (bank.bic ? ' — BIC ' + bank.bic : '') + ')' : '') + '.';
+    // Facture : on en profite pour demander un avis Google (le lien devient un bouton dans l'e-mail)
+    const review = !isAvoir && co.review_link
+      ? '\n\nVotre avis compte beaucoup pour nous : si vous êtes satisfait de notre intervention, pourriez-vous prendre une minute pour laisser un avis sur Google ? Merci d\'avance !\n\n' + co.review_link
+      : '';
     return 'Bonjour,\n\nVeuillez trouver ci-joint ' + (isAvoir ? 'votre avoir n° ' : 'votre facture n° ') + inv.number + ' d\'un montant de ' + fmtMoney2(Math.abs(inv.total_ttc)) + ' TTC' +
-      (inv.title ? ', concernant : ' + inv.title.toLowerCase() : '') + '.' + (pay ? '\n\n' + pay : '') +
+      (inv.title ? ', concernant : ' + inv.title.toLowerCase() : '') + '.' + (pay ? '\n\n' + pay : '') + review +
       '\n\nMerci pour votre confiance.\n\nBien cordialement,\nSébastien Tilliet';
   }
 
@@ -1353,6 +1362,8 @@
         emailSheet(Object.assign({}, c, { email: c.email }), {
           subject: (isAvoir ? 'Votre avoir ' : 'Votre facture ') + inv.number + ' — ' + company().name,
           text: invoiceEmailText(inv, c),
+          link: !isAvoir && company().review_link ? company().review_link : null,
+          buttons: !isAvoir && company().review_link ? [{ url: company().review_link, label: '⭐ Laisser un avis Google' }] : null,
           attachments: [{ name: invoiceFileName(inv), type: 'application/pdf', base64: await bytesToBase64(bytes) }],
           logText: invTitle(inv) + ' envoyé' + (isAvoir ? '' : 'e') + ' par e-mail',
           onSent: () => S.update('invoices', inv.id, { sent_at: new Date().toISOString() }).catch(() => {})
@@ -2231,6 +2242,13 @@
         '<div class="sig-editor" id="sig-editor" contenteditable="true">' + emailSignatureHtml() + '</div>' +
         '<div class="form-actions"><button class="btn btn-ghost" data-action="sig-default">Signature par défaut</button><button class="btn btn-primary" data-action="sig-save">Enregistrer la signature</button></div></div></section>';
 
+      // Sauvegarde hebdomadaire vers Google Drive
+      html += '<section class="card"><header class="card-head"><h3>Sauvegarde</h3><span id="backup-badge" class="badge" style="--c:#8a94a3">…</span></header><div class="pad">' +
+        '<p class="muted small">Chaque semaine, votre script Google enregistre une copie complète du CRM (clients, devis, rendez-vous, factures…) dans votre Google Drive, dossier « CRM Alpes Désembouage / Sauvegardes ». Les 12 dernières sont conservées. Les factures émises y sont aussi archivées en PDF.</p>' +
+        '<p id="backup-status" class="small">Chargement…</p>' +
+        '<div class="btn-row" style="padding:8px 0 0"><button class="btn btn-ghost" data-action="backup-key">Générer une clé de sauvegarde</button></div>' +
+        '<p class="muted small">Guide d’installation : crm/README.md → « Sauvegarde ».</p></div></section>';
+
       // Publicité : clé pour le script Google Ads (envoi automatique des dépenses)
       const ads = S.data.settings.ads || {}, lastAd = (S.data.ad_stats || []).filter((r) => r.platform === 'google').map((r) => r.updated_at).sort().pop();
       html += '<section class="card"><header class="card-head"><h3>Publicité (Google Ads)</h3>' + (lastAd ? '<span class="badge" style="--c:#1f9d55">Connecté</span>' : '<span class="badge" style="--c:#8a94a3">Non connecté</span>') + '</header><div class="pad">' +
@@ -2478,6 +2496,16 @@
       nextN.textContent = 'DEV-' + d.getFullYear() + '/' + pad(d.getMonth() + 1) + '-' + String((n || 0) + 1).padStart(4, '0');
     }).catch(() => { nextN.textContent = '(à activer : exécutez devis.sql dans Supabase)'; });
 
+    const backupBox = $('#backup-status');
+    if (backupBox) S.backupStatus().then((st) => {
+      const last = st && st.last_backup ? new Date(st.last_backup) : null;
+      const late = !last || Date.now() - last.getTime() > 8 * 86400000;
+      backupBox.innerHTML = last ? 'Dernière sauvegarde : <b>' + esc(fmt(last.toISOString(), { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</b>'
+        : (st && st.has_secret ? 'Clé enregistrée — aucune sauvegarde reçue pour l’instant.' : 'Pas encore configurée.');
+      const badge = $('#backup-badge');
+      if (badge) { badge.textContent = last && !late ? 'Active' : last ? 'En retard' : 'Non réglée'; badge.style.setProperty('--c', last && !late ? '#1f9d55' : last ? '#b3261e' : '#8a94a3'); }
+    }).catch(() => { backupBox.textContent = '(à activer : exécutez sauvegarde.sql dans Supabase)'; });
+
     const nextInv = $('#next-inv-n');
     if (nextInv) {
       const y = new Date().getFullYear();
@@ -2604,6 +2632,15 @@
       // Pas joint : on propose tout de suite de programmer le prochain rappel.
       if (type === 'joint') toast(label + ' — noté');
       else askReminder(client(c.id), label + ' — noté. Quand le recontacter ?');
+    },
+    'backup-key': async (el) => {
+      if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : nouvelle clé (l’ancienne ne marchera plus) ?'; return; }
+      const secret = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, '0')).join('');
+      try { await guard(() => S.setBackupSecret(secret)); } catch (e) { return; }
+      // La clé n'est affichée qu'une fois : elle n'est lisible par personne dans le CRM (coffre privé)
+      openSheet('Clé de sauvegarde', '<p>Copiez cette clé et collez-la dans le script Google, à la place de <b>COLLER_ICI_LA_CLE_DE_SAUVEGARDE</b>.</p>' +
+        '<label class="field"><span>Clé (affichée une seule fois)</span><div class="inline"><input value="' + esc(secret) + '" readonly><button type="button" class="btn btn-ghost btn-sm" data-action="copy-field">' + icon('copy') + '</button></div></label>' +
+        '<p class="muted small">Si vous la perdez, générez-en simplement une nouvelle et remplacez-la dans le script.</p>');
     },
     'ads-secret': async () => {
       const secret = Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, '0')).join('');

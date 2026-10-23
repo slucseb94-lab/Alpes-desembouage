@@ -223,6 +223,20 @@
     return data;
   };
 
+  // ---------------------------------------------------------------- sauvegarde hebdomadaire (clé rangée dans le coffre privé)
+  Store.backupStatus = async function () {
+    if (this.mode === 'demo') return { has_secret: !!demoDb.settings.backup_secret_demo, last_backup: null };
+    const { data, error } = await this.sb.rpc('backup_status');
+    if (error) throw new Error(error.message);
+    return data || {};
+  };
+
+  Store.setBackupSecret = async function (secret) {
+    if (this.mode === 'demo') { demoDb.settings.backup_secret_demo = true; demoSave(); return; }
+    const { error } = await this.sb.rpc('set_backup_secret', { p_secret: secret });
+    if (error) throw new Error(error.message);
+  };
+
   // ---------------------------------------------------------------- publicité (dépense saisie à la main, ex. Facebook par mois)
   Store.saveAdSpend = async function (platform, day, cost, campaign) {
     const row = { day, platform, campaign: campaign || 'Saisie manuelle', clicks: 0, impressions: 0, cost: Number(cost) || 0, conversions: 0, updated_at: new Date().toISOString() };
