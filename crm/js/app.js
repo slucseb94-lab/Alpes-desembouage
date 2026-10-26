@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '22 — chantiers';
+  const APP_VERSION = '23 — calendrier iPhone';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -485,15 +485,25 @@
     if (!a || !calReady()) return;
     try {
       if (!calOwns(a) || a.status === 'annule') {
-        if (a.gcal_event_id) {
-          await callMailScript({ action: 'cal_delete', gcal_id: a.gcal_event_id });
-          await S.update('appointments', a.id, { gcal_event_id: null, gcal_synced_at: new Date().toISOString() });
-        }
+        if (a.gcal_event_id) await callMailScript({ action: 'cal_delete', gcal_id: a.gcal_event_id });
+        await calRemoveDuplicates(a.id, null); // au cas où d'autres copies traîneraient dans le calendrier
+        if (a.gcal_event_id) await S.update('appointments', a.id, { gcal_event_id: null, gcal_synced_at: new Date().toISOString() });
         return;
       }
       const r = await callMailScript(Object.assign({ action: 'cal_upsert' }, calEvent(a)));
       await S.update('appointments', a.id, { gcal_event_id: r.id, gcal_synced_at: new Date().toISOString() });
+      // Ancien événement non retrouvé (rendez-vous déplacé…) : on supprime les copies restées à l'ancienne date
+      await calRemoveDuplicates(a.id, r.id);
     } catch (e) { toast('Calendrier iPhone non mis à jour : ' + e.message, true); }
+  }
+
+  // Supprime du calendrier tous les événements du même rendez-vous du CRM, sauf celui à garder
+  async function calRemoveDuplicates(crmId, keepId) {
+    const from = addDays(new Date(), -180), to = addDays(new Date(), 400);
+    const res = await callMailScript({ action: 'cal_list', from: from.toISOString(), to: to.toISOString() });
+    for (const ev of res.events || []) {
+      if (ev.crm_id === crmId && ev.id !== keepId) await callMailScript({ action: 'cal_delete', gcal_id: ev.id });
+    }
   }
 
   async function calRemove(a) {
