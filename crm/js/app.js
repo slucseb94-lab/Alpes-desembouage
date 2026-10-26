@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '21 — chantiers';
+  const APP_VERSION = '22 — chantiers';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -1203,7 +1203,7 @@
     } else if (q && Array.isArray(q.lines)) { lines = JSON.parse(JSON.stringify(q.lines)); title = q.title || ''; }
     else if (q) { lines = [{ label: q.title || 'Prestation selon devis ' + (q.reference || ''), description: '', unit: 'forfait', qty: 1, price_ttc: Number(q.amount) || 0 }]; title = q.title || ''; }
     else { lines = linesFor(kindFromClient(c), c.radiators_count || INCLUDED); title = QUOTE_KINDS[kindFromClient(c)].title; }
-    editor = { doc: 'invoice', key, id: null, clientId: c.id, kind: ref ? 'avoir' : 'facture', refId: ref ? ref.id : null, quoteId: q ? q.id : (ref ? ref.quote_id : null),
+    editor = { doc: 'invoice', key, id: null, clientId: c.id, kind: ref ? 'avoir' : 'facture', refId: ref ? ref.id : null, quoteId: q ? q.id : null,
       q: { title, project_address: (q && q.project_address) || (ref && ref.project_address) || clientAddress(c), service_date: ref ? ref.service_date : lastServiceDate(c.id),
         due_date: '', notes: q ? 'Devis ' + (q.reference || '') : '', paid_method: opts.paidMethod || '', paid_at: opts.paidAt || '', lines } };
   }
@@ -1262,7 +1262,9 @@
     let row;
     if (editor.id) row = await S.update('invoices', editor.id, patch);
     else {
-      row = await S.insert('invoices', Object.assign(patch, { client_id: editor.clientId, quote_id: editor.quoteId || null, kind: editor.kind, ref_invoice_id: editor.refId || null, status: 'brouillon', created_by: S.user.id }));
+      // Lien vers le devis : seulement pour une facture, et si le devis existe toujours (il a pu être supprimé entre-temps)
+      const quoteId = editor.kind === 'facture' && editor.quoteId && S.data.quotes.some((q) => q.id === editor.quoteId) ? editor.quoteId : null;
+      row = await S.insert('invoices', Object.assign(patch, { client_id: editor.clientId, quote_id: quoteId, kind: editor.kind, ref_invoice_id: editor.refId || null, status: 'brouillon', created_by: S.user.id }));
       editor.id = row.id; editor.key = 'inv:' + row.id;
     }
     editor.q.lines = lines;
