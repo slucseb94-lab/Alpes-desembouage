@@ -1317,9 +1317,9 @@
     const intro = inv.paid_at
       ? 'Vous trouverez ci-joint votre facture acquittée n° ' + inv.number + ' pour le désembouage de votre circuit de chauffage. Elle a bien été réglée le ' + fmtDate(inv.paid_at) + ', merci !'
       : 'Vous trouverez ci-joint votre facture n° ' + inv.number + ' d\'un montant de ' + fmtMoney2(inv.total_ttc) + ' TTC pour le désembouage de votre circuit de chauffage.\n\nL\'IBAN pour le virement se trouve sur la facture.';
-    // Demande d'avis Google : la ligne du lien devient le bouton « ⭐ Laisser un avis Google » dans l'e-mail
-    const review = co.review_link ? '\n\nSi vous êtes satisfait de l\'intervention, un petit avis Google m\'aiderait beaucoup :\n\n' + co.review_link : '';
-    return 'Bonjour,\n\n' + intro + review + '\n\nJe vous remercie de votre confiance.\n\nBien cordialement,\n\nSébastien Tilliet\n' + co.name;
+    // Demande d'avis Google, sous le nom : la ligne du lien devient le bouton « ⭐ Laisser un avis Google » dans l'e-mail
+    const review = co.review_link ? '\n\n' + co.review_link : '';
+    return 'Bonjour,\n\n' + intro + '\n\nJe vous remercie de votre confiance.\n\nBien cordialement,\n\nSébastien Tilliet\n' + co.name + review;
   }
 
   async function bytesToBase64(bytes) {
