@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '23 — calendrier iPhone';
+  const APP_VERSION = '24 — e-mail facture';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -1308,18 +1308,18 @@
   }
 
   function invoiceEmailText(inv, c) {
-    const isAvoir = inv.kind === 'avoir';
-    const bank = S.data.settings.bank || {}, co = company();
-    const pay = isAvoir ? '' : inv.paid_at
-      ? 'Elle a bien été réglée le ' + fmtDate(inv.paid_at) + ', merci !'
-      : 'Elle est payable à réception, par virement bancaire' + (co.iban || bank.iban ? ' (IBAN ' + (bank.iban || co.iban) + (bank.bic ? ' — BIC ' + bank.bic : '') + ')' : '') + '.';
-    // Facture : on en profite pour demander un avis Google (le lien devient un bouton dans l'e-mail)
-    const review = !isAvoir && co.review_link
-      ? '\n\nVotre avis compte beaucoup pour nous : si vous êtes satisfait de notre intervention, pourriez-vous prendre une minute pour laisser un avis sur Google ? Merci d\'avance !\n\n' + co.review_link
-      : '';
-    return 'Bonjour,\n\nVeuillez trouver ci-joint ' + (isAvoir ? 'votre avoir n° ' : 'votre facture n° ') + inv.number + ' d\'un montant de ' + fmtMoney2(Math.abs(inv.total_ttc)) + ' TTC' +
-      (inv.title ? ', concernant : ' + inv.title.toLowerCase() : '') + '.' + (pay ? '\n\n' + pay : '') + review +
-      '\n\nMerci pour votre confiance.\n\nBien cordialement,\nSébastien Tilliet';
+    const isAvoir = inv.kind === 'avoir', co = company();
+    if (isAvoir) {
+      return 'Bonjour,\n\nVous trouverez ci-joint votre avoir n° ' + inv.number + ' d\'un montant de ' + fmtMoney2(Math.abs(inv.total_ttc)) + ' TTC.' +
+        '\n\nJe vous remercie de votre confiance.\n\nBien cordialement,\n\nSébastien Tilliet\n' + co.name;
+    }
+    // Payée : facture « acquittée » ; sinon on renvoie vers l'IBAN imprimé sur la facture
+    const intro = inv.paid_at
+      ? 'Vous trouverez ci-joint votre facture acquittée n° ' + inv.number + ' pour le désembouage de votre circuit de chauffage. Elle a bien été réglée le ' + fmtDate(inv.paid_at) + ', merci !'
+      : 'Vous trouverez ci-joint votre facture n° ' + inv.number + ' d\'un montant de ' + fmtMoney2(inv.total_ttc) + ' TTC pour le désembouage de votre circuit de chauffage.\n\nL\'IBAN pour le virement se trouve sur la facture.';
+    // Demande d'avis Google : la ligne du lien devient le bouton « ⭐ Laisser un avis Google » dans l'e-mail
+    const review = co.review_link ? '\n\nSi vous êtes satisfait de l\'intervention, un petit avis Google m\'aiderait beaucoup :\n\n' + co.review_link : '';
+    return 'Bonjour,\n\n' + intro + review + '\n\nJe vous remercie de votre confiance.\n\nBien cordialement,\n\nSébastien Tilliet\n' + co.name;
   }
 
   async function bytesToBase64(bytes) {
