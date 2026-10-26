@@ -68,7 +68,7 @@ main#view {
 .fab .ico { width: 26px; height: 26px; stroke-width: 2.5; }
 
 /* sur mobile, la barre du bas n'affiche pas « Équipe » (accessible via Réglages) */
-.nav a[href="#/equipe"], .nav a[href="#/factures"], .nav a[href="#/pub"] { display: none; }
+.nav a[href="#/equipe"], .nav a[href="#/factures"], .nav a[href="#/pub"], .nav a[href="#/site"] { display: none; }
 
 @media (min-width: 900px) {
   .sidebar {
@@ -80,7 +80,7 @@ main#view {
   .brand b { display: block; font-family: var(--font-head); font-size: 14px; color: var(--blue-900); }
   .brand span { font-size: 12px; color: var(--muted); }
   .nav { flex-direction: column; height: auto; gap: 2px; }
-  .nav a, .nav a[href="#/equipe"], .nav a[href="#/factures"], .nav a[href="#/pub"] { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: flex; }
+  .nav a, .nav a[href="#/equipe"], .nav a[href="#/factures"], .nav a[href="#/pub"], .nav a[href="#/site"] { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: flex; }
   .nav a:hover { background: var(--bg); }
   .nav a.on { background: var(--blue-50); }
   .demo-flag { display: block; margin-top: auto; padding: 8px 12px; border-radius: 8px; background: #fff4ec; color: #a8470f; font-size: 12px; font-weight: 600; text-align: center; }
@@ -433,3 +433,21 @@ table.ads td { padding: 9px 10px; border-bottom: 1px solid var(--line); white-sp
 table.ads tr:last-child td { border-bottom: 0; }
 table.ads td:first-child { font-weight: 600; }
 .ok { color: var(--ok); }
+
+/* ------------------------------------------------------------ chantiers */
+.jobs { display: flex; flex-direction: column; }
+.job { display: grid; grid-template-columns: minmax(180px, 1.2fr) 2.4fr auto; gap: 14px; align-items: center; padding: 12px 16px 12px 13px; border-top: 1px solid var(--line); border-left: 3px solid var(--c); }
+.jobs .job:first-child { border-top: 0; }
+.job-title { font-weight: 700; color: var(--blue-900); }
+.job-sub { font-size: 13px; color: var(--muted); }
+.job-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.job-step { display: flex; flex-direction: column; font-size: 13px; padding: 6px 8px; border-radius: 8px; background: #f1f3f6; color: var(--muted); }
+.job-step small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; font-weight: 700; }
+.job-step.on { background: #e9f7ef; color: #146c3b; }
+.job-end { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.job-end .link { padding: 0; }
+@media (max-width: 899px) {
+  .job { grid-template-columns: 1fr; gap: 8px; }
+  .job-steps { grid-template-columns: repeat(2, 1fr); }
+  .job-end { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
+}

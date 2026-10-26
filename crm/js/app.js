@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '20 — sauvegardes';
+  const APP_VERSION = '21 — chantiers';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -567,6 +567,8 @@
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    check: '<path d="M20 6L9 17l-5-5"/>',
+    tool: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
     pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
     copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     card: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
@@ -1203,7 +1205,7 @@
     else { lines = linesFor(kindFromClient(c), c.radiators_count || INCLUDED); title = QUOTE_KINDS[kindFromClient(c)].title; }
     editor = { doc: 'invoice', key, id: null, clientId: c.id, kind: ref ? 'avoir' : 'facture', refId: ref ? ref.id : null, quoteId: q ? q.id : (ref ? ref.quote_id : null),
       q: { title, project_address: (q && q.project_address) || (ref && ref.project_address) || clientAddress(c), service_date: ref ? ref.service_date : lastServiceDate(c.id),
-        due_date: '', notes: q ? 'Devis ' + (q.reference || '') : '', paid_method: '', paid_at: '', lines } };
+        due_date: '', notes: q ? 'Devis ' + (q.reference || '') : '', paid_method: opts.paidMethod || '', paid_at: opts.paidAt || '', lines } };
   }
 
   function viewInvoiceEditor(id, params) {
@@ -1214,7 +1216,7 @@
     const c = client(cid);
     if (!c) return pageHead('Facture', '', '', '#/factures') + empty('Client introuvable.');
     const key = 'inv:' + (id || [cid, params.get('quote') || '', params.get('avoir') || ''].join(':'));
-    if (!editor || editor.key !== key) startInvoiceEditor(key, inv, { clientId: cid, quoteId: params.get('quote'), refId: params.get('avoir') });
+    if (!editor || editor.key !== key) startInvoiceEditor(key, inv, { clientId: cid, quoteId: params.get('quote'), refId: params.get('avoir'), paidMethod: params.get('mode'), paidAt: params.get('date') });
     const e = editor.q, isAvoir = editor.kind === 'avoir';
     const ref = editor.refId ? S.data.invoices.find((x) => x.id === editor.refId) : null;
 
@@ -1466,6 +1468,107 @@
       '<p class="muted small pad">« Clients » : prospects devenus clients ou ayant accepté un devis. « Facturé » : factures émises pour ces clients (avoirs déduits). L’origine « Publicité Google Ads » est connue pour les demandes faites sur le site depuis une annonce.</p></section>';
     html += '</div>';
     return html;
+  }
+
+  // ================================================================ chantiers : du devis signé au paiement
+  const JOB_STAGES = {
+    a_planifier: { label: 'À planifier', color: '#5a6472' },
+    planifie: { label: 'RDV prévu', color: '#1c74c4' },
+    a_facturer: { label: 'Fait — à facturer', color: '#e0691f' },
+    a_payer: { label: 'Facturé — à payer', color: '#b3261e' },
+    paye: { label: 'Payé ✓', color: '#1f9d55' }
+  };
+
+  // Un chantier = un devis accepté (ou une facture émise sans devis), avec son rendez-vous, sa facture et son paiement
+  function jobsList() {
+    const jobs = [];
+    const usedInvoices = new Set();
+    S.data.quotes.filter((q) => q.status === 'accepte').forEach((q) => {
+      const c = client(q.client_id);
+      if (!c) return;
+      const since = new Date(q.signed_at || q.sent_date || q.created_at); since.setDate(since.getDate() - 30);
+      const appts = S.data.appointments.filter((a) => a.client_id === q.client_id && a.status !== 'annule' && new Date(a.start_at) >= since)
+        .sort((a, b) => a.start_at.localeCompare(b.start_at));
+      const appt = appts.find((a) => a.type !== 'visite') || appts[0] || null;
+      const inv = S.data.invoices.filter((i) => i.kind === 'facture' && i.status !== 'annulee' && (i.quote_id === q.id || (!i.quote_id && i.client_id === q.client_id && !usedInvoices.has(i.id))))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+      if (inv) usedInvoices.add(inv.id);
+      jobs.push({ key: 'q' + q.id, q, c, appt, inv, amount: Number(q.amount || 0) });
+    });
+    S.data.invoices.filter((i) => i.kind === 'facture' && i.status !== 'brouillon' && i.status !== 'annulee' && !usedInvoices.has(i.id)).forEach((i) => {
+      const c = client(i.client_id) || i.client_snapshot || { name: 'Client' };
+      const appt = S.data.appointments.filter((a) => a.client_id === i.client_id && a.status === 'termine').sort((a, b) => b.start_at.localeCompare(a.start_at))[0] || null;
+      jobs.push({ key: 'i' + i.id, q: null, c, appt, inv: i, amount: Number(i.total_ttc || 0) });
+    });
+    jobs.forEach((j) => {
+      const paidByPayment = j.appt && S.data.payments.some((p) => p.appointment_id === j.appt.id && p.status === 'paye');
+      j.stage = (j.inv && j.inv.status === 'payee') || (!j.inv && paidByPayment) ? 'paye'
+        : j.inv && j.inv.status !== 'brouillon' ? 'a_payer'
+        : j.appt && j.appt.status === 'termine' ? 'a_facturer'
+        : j.appt ? 'planifie' : 'a_planifier';
+      j.date = j.appt ? j.appt.start_at : (j.inv && j.inv.issue_date) || (j.q && (j.q.signed_at || j.q.sent_date || j.q.created_at)) || '';
+    });
+    return jobs;
+  }
+
+  function jobRow(j) {
+    const st = JOB_STAGES[j.stage];
+    const rdv = j.appt ? fmt(j.appt.start_at, { weekday: 'short', day: 'numeric', month: 'short' }) + ' à ' + fmtTime(j.appt.start_at) : '—';
+    const actions = {
+      a_planifier: '<button class="btn btn-primary btn-sm" data-action="job-plan" data-client="' + j.c.id + '">' + icon('calendar') + 'Planifier</button>',
+      planifie: '<button class="btn btn-primary btn-sm" data-action="job-done" data-appt="' + (j.appt && j.appt.id) + '">' + icon('check') + 'Intervention faite</button>',
+      a_facturer: '<button class="btn btn-primary btn-sm" data-action="job-invoice" data-client="' + j.c.id + '"' + (j.q ? ' data-quote="' + j.q.id + '"' : '') + '>' + icon('doc') + 'Créer la facture</button>',
+      a_payer: '<button class="btn btn-primary btn-sm" data-action="job-paid" data-invoice="' + (j.inv && j.inv.id) + '">' + icon('check') + 'Marquer payé</button>',
+      paye: ''
+    }[j.stage];
+    const unpaidNoInvoice = !j.inv && j.stage !== 'paye' && j.stage !== 'a_planifier';
+    return '<div class="job" style="--c:' + st.color + '">' +
+      '<div class="job-main"><a class="job-title" href="#/clients/' + j.c.id + '">' + esc(j.c.name) + '</a>' +
+      '<div class="job-sub">' + esc((j.q && (j.q.title || 'Devis ' + (j.q.reference || ''))) || (j.inv && j.inv.title) || '') + ' · <b>' + esc(fmtMoney2(j.amount)) + '</b></div></div>' +
+      '<div class="job-steps">' +
+      '<span class="job-step' + (j.appt ? ' on' : '') + '"><small>RDV</small>' + esc(rdv) + '</span>' +
+      '<span class="job-step' + (j.appt && j.appt.status === 'termine' ? ' on' : '') + '"><small>Intervention</small>' + (j.appt && j.appt.status === 'termine' ? 'Faite' : 'À faire') + '</span>' +
+      '<span class="job-step' + (j.inv ? ' on' : '') + '"><small>Facture</small>' + (j.inv ? (j.inv.number ? esc(j.inv.number) : 'Brouillon') : '—') + '</span>' +
+      '<span class="job-step' + (j.stage === 'paye' ? ' on' : '') + '"><small>Paiement</small>' + (j.stage === 'paye' ? 'Payé' : 'À payer') + '</span></div>' +
+      '<div class="job-end"><span class="badge" style="--c:' + st.color + '">' + esc(st.label) + '</span>' + actions +
+      (unpaidNoInvoice ? '<button class="link small" data-action="job-paid-noinv" data-client="' + j.c.id + '"' + (j.q ? ' data-quote="' + j.q.id + '"' : '') + '>Déjà payé ?</button>' : '') +
+      (j.inv ? '<button class="link small" data-action="open-invoice" data-id="' + j.inv.id + '">Voir la facture</button>' : '') + '</div></div>';
+  }
+
+  function viewJobs(params) {
+    if (!S.isAdmin()) return pageHead('Chantiers') + empty('Réservé au gérant.');
+    const f = params.get('s') || 'en_cours';
+    const all = jobsList();
+    const recentPaid = (j) => j.stage === 'paye' && daysSince(j.date || new Date().toISOString()) <= 31;
+    const list = all.filter((j) => (f === 'en_cours' ? j.stage !== 'paye' || recentPaid(j) : f === 'tous' ? true : j.stage === f))
+      .sort((a, b) => Object.keys(JOB_STAGES).indexOf(a.stage) - Object.keys(JOB_STAGES).indexOf(b.stage) || String(a.date).localeCompare(String(b.date)));
+    const sum = (st) => all.filter((j) => j.stage === st).reduce((s, j) => s + j.amount, 0);
+    const count = (st) => all.filter((j) => j.stage === st).length;
+    const month = ymd(new Date()).slice(0, 7);
+    const paidMonth = all.filter((j) => j.stage === 'paye' && ((j.inv && String(j.inv.paid_at || '').startsWith(month)) || (!j.inv && String(j.date).startsWith(month)))).reduce((s, j) => s + j.amount, 0);
+
+    let html = pageHead('Chantiers', 'Du devis signé au paiement');
+    html += '<div class="kpis">' +
+      kpi('À planifier', count('a_planifier'), '#/chantiers?s=a_planifier', fmtMoney(sum('a_planifier'))) +
+      kpi('À facturer', count('a_facturer'), '#/chantiers?s=a_facturer', fmtMoney(sum('a_facturer'))) +
+      kpi('À encaisser', fmtMoney(sum('a_payer')), '#/chantiers?s=a_payer', count('a_payer') + ' facture(s)') +
+      kpi('Payé ce mois', fmtMoney(paidMonth), '#/chantiers?s=paye') + '</div>';
+    html += '<div class="chips" style="margin-bottom:12px">' + [['en_cours', 'En cours'], ...Object.entries(JOB_STAGES).map(([k, v]) => [k, v.label]), ['tous', 'Tous']]
+      .map(([k, l]) => '<a class="chip' + (f === k ? ' on' : '') + '" href="#/chantiers?s=' + k + '">' + esc(l) + (JOB_STAGES[k] ? ' <b>' + count(k) + '</b>' : '') + '</a>').join('') + '</div>';
+    html += '<section class="card flush"><div class="jobs">' + (list.length ? list.map(jobRow).join('') : empty('Aucun chantier dans cette catégorie. Les devis acceptés ou signés apparaissent ici automatiquement.')) + '</div></section>';
+    return html;
+  }
+
+  // Intervention faite depuis l'onglet Chantiers (même effet que « Terminer l'intervention » sur le rendez-vous)
+  async function finishAppointment(a) {
+    const c = client(a.client_id);
+    await S.update('appointments', a.id, { status: 'termine' });
+    if (c) {
+      await logActivity(c.id, 'visite', APPT_TYPES[a.type] + ' terminé(e)');
+      if (SERVICE_TYPES.includes(a.type)) await S.update('clients', c.id, { last_service_date: ymd(new Date(a.start_at)) });
+      if (SERVICE_TYPES.includes(a.type) || a.type === 'sav') await setClientStatus(client(c.id), 'client', 'intervention réalisée');
+    }
+    calPush(S.data.appointments.find((x) => x.id === a.id));
   }
 
   // ================================================================ paiements
@@ -2172,6 +2275,7 @@
       (S.isAdmin() ? '<a class="btn btn-ghost" href="#/equipe">' + icon('team') + 'Équipe</a>' : '') +
       (S.isAdmin() ? '<a class="btn btn-ghost" href="#/factures">' + icon('doc') + 'Factures</a>' : '') +
       (S.isAdmin() ? '<a class="btn btn-ghost" href="#/pub">' + icon('chart') + 'Publicité</a>' : '') +
+      (S.isAdmin() ? '<a class="btn btn-ghost" href="#/site">' + icon('chart') + 'Site web</a>' : '') +
       (S.mode === 'supabase' ? '<button class="btn btn-ghost" data-action="change-password">Changer mon mot de passe</button>' : '') +
       (S.isAdmin() ? '<button class="btn btn-ghost" data-action="export-csv">Exporter les clients (CSV)</button>' : '') +
       (S.mode === 'demo' && S.isAdmin() ? '<button class="btn btn-danger-ghost" data-action="reset-demo">Réinitialiser la démo</button>' : '') +
@@ -2329,6 +2433,7 @@
       else if (section === 'devis') html = viewQuoteEditor(parts[1] === 'nouveau' ? null : parts[1], params);
       else if (section === 'factures') html = viewInvoices(params);
       else if (section === 'pub') html = viewAds(params);
+      else if (section === 'chantiers') html = viewJobs(params);
       else if (section === 'facture') html = viewInvoiceEditor(parts[1] === 'nouvelle' ? null : parts[1], params);
       else if (section === 'site' && S.isAdmin()) html = viewSite(params);
       else if (section === 'equipe') html = viewTeam();
@@ -2346,7 +2451,7 @@
     window.scrollTo(0, sameRoute ? scroll : 0);
     document.querySelectorAll('.nav a').forEach((a) => {
       const target = a.getAttribute('href').slice(2).split('/')[0];
-      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'site', 'equipe', 'reglages', 'rdv', 'devis', 'factures', 'facture', 'pub'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis') || (target === 'factures' && section === 'facture'));
+      a.classList.toggle('on', target === section || (target === '' && !['agenda', 'clients', 'pipeline', 'site', 'equipe', 'reglages', 'rdv', 'devis', 'factures', 'facture', 'pub', 'chantiers'].includes(section)) || (target === 'agenda' && section === 'rdv') || (target === 'clients' && section === 'devis') || (target === 'factures' && section === 'facture'));
     });
     bindView();
   }
@@ -2354,7 +2459,7 @@
   function renderShell() {
     const admin = S.isAdmin();
     const items = [['', 'home', 'Accueil'], ['agenda', 'calendar', 'Agenda'], ['clients', 'users', 'Clients']];
-    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['factures', 'doc', 'Factures'], ['pub', 'chart', 'Publicité'], ['site', 'chart', 'Site web'], ['equipe', 'team', 'Équipe']);
+    if (admin) items.push(['pipeline', 'columns', 'Pipeline'], ['chantiers', 'tool', 'Chantiers'], ['factures', 'doc', 'Factures'], ['pub', 'chart', 'Publicité'], ['site', 'chart', 'Site web'], ['equipe', 'team', 'Équipe']);
     items.push(['reglages', 'settings', 'Réglages']);
     document.getElementById('app').innerHTML =
       '<aside class="sidebar"><div class="brand"><img src="icons/icon.svg" alt=""><div><b>Alpes Désembouage</b><span>CRM</span></div></div>' +
@@ -2633,6 +2738,43 @@
       if (type === 'joint') toast(label + ' — noté');
       else askReminder(client(c.id), label + ' — noté. Quand le recontacter ?');
     },
+    'job-plan': (el) => editAppointment(null, { client_id: el.dataset.client, type: 'desembouage' }),
+    'job-done': async (el) => {
+      const a = S.data.appointments.find((x) => x.id === el.dataset.appt);
+      if (!a) return;
+      if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : intervention faite ?'; return; }
+      await guard(() => finishAppointment(a));
+      toast('Intervention marquée comme faite'); render();
+    },
+    'job-invoice': (el) => { editor = null; location.hash = '#/facture/nouvelle?client=' + el.dataset.client + (el.dataset.quote ? '&quote=' + el.dataset.quote : ''); },
+    'job-paid': (el) => {
+      const inv = S.data.invoices.find((x) => x.id === el.dataset.invoice);
+      if (!inv) return;
+      if (inv.status === 'brouillon') { invoiceSheet(inv); return; }
+      openForm({
+        title: 'Facture ' + inv.number + ' payée',
+        fields: [{ name: 'payment_method', label: 'Moyen de paiement', type: 'select', options: PAY_MODES, half: true }, { name: 'paid_at', label: 'Date du règlement', type: 'date', required: true, half: true }],
+        values: { payment_method: 'Virement', paid_at: ymd(new Date()) },
+        onSubmit: async (v) => {
+          await S.update('invoices', inv.id, { status: 'payee', paid_at: v.paid_at, payment_method: v.payment_method });
+          if (inv.client_id) await logActivity(inv.client_id, 'note', 'Facture ' + inv.number + ' payée (' + v.payment_method.toLowerCase() + ', ' + fmtMoney2(inv.total_ttc) + ')');
+          toast('Marqué comme payé');
+        }
+      });
+    },
+    // Payé avant d'avoir fait la facture : on prépare directement la facture « acquittée »
+    'job-paid-noinv': (el) => openForm({
+      title: 'Règlement reçu',
+      fields: [{ name: 'mode', label: 'Moyen de paiement', type: 'select', options: PAY_MODES, half: true }, { name: 'date', label: 'Date du règlement', type: 'date', required: true, half: true }],
+      values: { mode: 'Virement', date: ymd(new Date()) },
+      submitLabel: 'Préparer la facture acquittée',
+      onSubmit: async (v) => v,
+      after: (v) => {
+        editor = null;
+        location.hash = '#/facture/nouvelle?client=' + el.dataset.client + (el.dataset.quote ? '&quote=' + el.dataset.quote : '') + '&mode=' + encodeURIComponent(v.mode) + '&date=' + v.date;
+        setTimeout(() => toast('Vérifiez la facture puis cliquez sur « Émettre la facture »'), 400);
+      }
+    }),
     'backup-key': async (el) => {
       if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : nouvelle clé (l’ancienne ne marchera plus) ?'; return; }
       const secret = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, '0')).join('');
