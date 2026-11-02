@@ -1254,3 +1254,10 @@ revoke all on function public.backup_export(text) from public;
 grant execute on function public.set_backup_secret(text) to authenticated;
 grant execute on function public.backup_status() to authenticated;
 grant execute on function public.backup_export(text) to anon, authenticated;
+
+-- =====================================================================
+-- Nombre de boucles de plancher chauffant sur la fiche client
+-- À coller une fois dans Supabase > SQL Editor > New query > Run
+-- Conseil : fermez le CRM (ordinateur et téléphone) pendant l'exécution.
+-- =====================================================================
+alter table public.clients add column if not exists loops_count integer;

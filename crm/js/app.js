@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '25 — demande de coordonnées';
+  const APP_VERSION = '26 — boucles plancher';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -371,7 +371,9 @@
   // « 9 radiateurs », « 7 boucles de plancher chauffant »… déduit des lignes du devis (ou de la fiche client)
   function quoteElements(q, c) {
     const lines = Array.isArray(q.lines) ? q.lines : [];
-    const all = lines.map((l) => String(l.label || '')).join(' ').toLowerCase();
+    // Devis rempli depuis la fiche : « Installation : 9 radiateurs et 6 boucles de plancher chauffant. »
+    for (const l of lines) { const m = String(l.description || '').match(/^Installation : ([^\n]+?)\.(\n|$)/); if (m) return m[1]; }
+    const all =lines.map((l) => String(l.label || '')).join(' ').toLowerCase();
     const kind = /radiateurs\s*\/\s*boucles|radiateurs et boucles/.test(all) ? 'mixte' : /boucle|chauffage au sol|plancher/.test(all) ? 'plancher' : 'radiateurs';
     let n = 0;
     lines.forEach((l) => {
@@ -703,6 +705,7 @@
       { name: 'boiler_brand', label: 'Chaudière / PAC (marque, modèle)', half: true },
       { name: 'emitter_type', label: 'Émetteurs', type: 'select', options: EMITTERS, empty: '—', half: true },
       { name: 'radiators_count', label: 'Nombre de radiateurs', type: 'number', half: true, inputmode: 'numeric' },
+      { name: 'loops_count', label: 'Nombre de boucles de plancher chauffant', type: 'number', half: true, inputmode: 'numeric' },
       { name: 'last_service_date', label: 'Dernier désembouage / entretien', type: 'date', half: true },
       { name: 'service_interval_months', label: 'Rappel entretien tous les', type: 'select', options: { 12: '1 an', 24: '2 ans', 36: '3 ans', 48: '4 ans', 60: '5 ans' }, default: 36, half: true },
       { name: 'notes', label: 'Notes', type: 'textarea', rows: 3 }
@@ -717,6 +720,7 @@
       values: c || Object.assign({ status: 'nouveau', country: 'FR', type: 'particulier' }, preset || {}),
       onSubmit: async (v) => {
         v.radiators_count = v.radiators_count == null ? null : Math.round(v.radiators_count);
+        v.loops_count = v.loops_count == null ? null : Math.round(v.loops_count);
         v.service_interval_months = Number(v.service_interval_months) || 36;
         // Doublon possible : on prévient une fois, un second clic sur « Enregistrer » crée quand même la fiche.
         const dup = findDuplicate(v, c ? c.id : null);
@@ -998,14 +1002,28 @@
   const catalog = () => (Array.isArray(S.data.settings.catalog) && S.data.settings.catalog.length ? S.data.settings.catalog : DEFAULT_CATALOG);
   const catalogItem = (id) => catalog().find((x) => x.id === id);
   const lineFrom = (item, qty) => ({ label: item.label, description: item.description || '', unit: item.unit || 'u', qty, price_ttc: Number(item.price_ttc) || 0 });
-  const kindFromClient = (c) => (c.emitter_type === 'Plancher chauffant' ? 'plancher' : c.emitter_type === 'Mixte' ? 'mixte' : 'radiateurs');
+  const kindFromClient = (c) => (c.emitter_type === 'Plancher chauffant' ? 'plancher' : c.emitter_type === 'Mixte' ? 'mixte'
+    : !c.emitter_type && Number(c.loops_count) > 0 ? (Number(c.radiators_count) > 0 ? 'mixte' : 'plancher') : 'radiateurs');
+  // Éléments comptés selon le type : radiateurs, boucles, ou les deux (le forfait mixte compte radiateurs + boucles)
+  const countFor = (kind, rad, loops) => (kind === 'plancher' ? Number(loops) || 0 : kind === 'mixte' ? (Number(rad) || 0) + (Number(loops) || 0) : Number(rad) || 0);
+  const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
+  // « 9 radiateurs et 6 boucles de plancher chauffant » : imprimé sur le devis et repris dans l'e-mail
+  function installText(kind, rad, loops) {
+    rad = Number(rad) || 0; loops = Number(loops) || 0;
+    const r = rad ? plural(rad, 'radiateur', 'radiateurs') : '', b = loops ? plural(loops, 'boucle de plancher chauffant', 'boucles de plancher chauffant') : '';
+    return (kind === 'plancher' ? b : kind === 'mixte' ? [r, b].filter(Boolean).join(' et ') : r);
+  }
 
   // Forfait (5 inclus) + éléments supplémentaires au-delà de 5
-  function linesFor(kind, count) {
+  function linesFor(kind, rad, loops) {
     const k = QUOTE_KINDS[kind], base = catalogItem(k.base), extra = catalogItem(k.extra);
-    const lines = [];
-    if (base) lines.push(lineFrom(base, 1));
-    const more = Math.max(0, (Number(count) || 0) - INCLUDED);
+    const lines = [], inst = installText(kind, rad, loops);
+    if (base) {
+      const l = lineFrom(base, 1);
+      if (inst) l.description = 'Installation : ' + inst + '.' + (l.description ? '\n' + l.description : '');
+      lines.push(l);
+    }
+    const more = Math.max(0, countFor(kind, rad, loops) - INCLUDED);
     if (more && extra) lines.push(lineFrom(extra, more));
     return lines;
   }
@@ -1042,14 +1060,14 @@
     const co = company();
     const today = new Date();
     if (q) {
-      editor = { key, id: q.id, clientId: q.client_id, kind: null, count: c.radiators_count || INCLUDED,
+      editor = { key, id: q.id, clientId: q.client_id, kind: null, rad: c.radiators_count || '', loops: c.loops_count || '',
         q: { reference: q.reference, title: q.title || '', project_address: q.project_address || clientAddress(c), issue_date: q.issue_date || ymd(today),
           valid_until: q.valid_until || ymd(addDays(today, co.validity_days || 30)), notes: q.notes || '', lines: JSON.parse(JSON.stringify(q.lines || [])) } };
     } else {
-      const kind = kindFromClient(c), count = c.radiators_count || INCLUDED;
-      editor = { key, id: null, clientId: c.id, kind, count,
+      const kind = kindFromClient(c), rad = c.radiators_count || '', loops = c.loops_count || '';
+      editor = { key, id: null, clientId: c.id, kind, rad, loops,
         q: { reference: '', title: QUOTE_KINDS[kind].title, project_address: clientAddress(c), issue_date: ymd(today),
-          valid_until: ymd(addDays(today, Number(co.validity_days) || 30)), notes: '', lines: linesFor(kind, count) } };
+          valid_until: ymd(addDays(today, Number(co.validity_days) || 30)), notes: '', lines: linesFor(kind, rad, loops) } };
     }
   }
 
@@ -1091,8 +1109,11 @@
     // Générateur rapide
     html += card('Remplissage rapide', '<div class="pad qgen">' +
       '<div class="seg-btns">' + Object.entries(QUOTE_KINDS).map(([k, v]) => '<button type="button" class="chip' + (editor.kind === k ? ' on' : '') + '" data-action="q-kind" data-kind="' + k + '">' + esc(v.label) + '</button>').join('') + '</div>' +
-      '<label class="field"><span>Nombre de ' + esc(editor.kind ? QUOTE_KINDS[editor.kind].counted : 'radiateurs / boucles') + ' (forfait : ' + INCLUDED + ' inclus)</span>' +
-      '<input id="q-count" type="number" min="1" inputmode="numeric" value="' + esc(editor.count) + '"></label>' +
+      (editor.kind !== 'plancher' ? '<label class="field' + (editor.kind !== 'radiateurs' ? ' half' : '') + '"><span>Nombre de radiateurs</span>' +
+        '<input id="q-rad" type="number" min="0" inputmode="numeric" value="' + esc(editor.rad) + '"></label>' : '') +
+      (editor.kind !== 'radiateurs' ? '<label class="field' + (editor.kind !== 'plancher' ? ' half' : '') + '"><span>Nombre de boucles de plancher chauffant</span>' +
+        '<input id="q-loops" type="number" min="0" inputmode="numeric" value="' + esc(editor.loops) + '"></label>' : '') +
+      '<p class="muted small">Forfait : ' + INCLUDED + ' ' + esc(editor.kind ? QUOTE_KINDS[editor.kind].counted : 'radiateurs / boucles') + ' inclus.</p>' +
       '<button type="button" class="btn btn-primary" data-action="q-generate">Remplir les lignes</button>' +
       '<p class="muted small">Remplace les lignes du devis par le forfait et les éléments supplémentaires.</p></div>');
 
@@ -1125,8 +1146,9 @@
     const root = $('#qlines');
     if (!root || !editor) return;
     document.querySelectorAll('[data-q]').forEach((el) => el.addEventListener('input', () => { editor.q[el.dataset.q] = el.value; }));
-    const count = $('#q-count');
-    if (count) count.addEventListener('input', () => { editor.count = count.value; });
+    const rad = $('#q-rad'), loops = $('#q-loops');
+    if (rad) rad.addEventListener('input', () => { editor.rad = rad.value; });
+    if (loops) loops.addEventListener('input', () => { editor.loops = loops.value; });
     root.addEventListener('input', (ev) => {
       const el = ev.target, line = el.closest('.qline');
       if (!line || !el.dataset.f) return;
@@ -1223,7 +1245,7 @@
       title = 'Avoir — ' + (ref.title || 'facture ' + ref.number);
     } else if (q && Array.isArray(q.lines)) { lines = JSON.parse(JSON.stringify(q.lines)); title = q.title || ''; }
     else if (q) { lines = [{ label: q.title || 'Prestation selon devis ' + (q.reference || ''), description: '', unit: 'forfait', qty: 1, price_ttc: Number(q.amount) || 0 }]; title = q.title || ''; }
-    else { lines = linesFor(kindFromClient(c), c.radiators_count || INCLUDED); title = QUOTE_KINDS[kindFromClient(c)].title; }
+    else { lines = linesFor(kindFromClient(c), c.radiators_count, c.loops_count); title = QUOTE_KINDS[kindFromClient(c)].title; }
     editor = { doc: 'invoice', key, id: null, clientId: c.id, kind: ref ? 'avoir' : 'facture', refId: ref ? ref.id : null, quoteId: q ? q.id : null,
       q: { title, project_address: (q && q.project_address) || (ref && ref.project_address) || clientAddress(c), service_date: ref ? ref.service_date : lastServiceDate(c.id),
         due_date: '', notes: q ? 'Devis ' + (q.reference || '') : '', paid_method: opts.paidMethod || '', paid_at: opts.paidAt || '', lines } };
@@ -2174,7 +2196,7 @@
       info('Technicien référent', c.assigned_to && profile(c.assigned_to) ? profile(c.assigned_to).full_name : '') + '</div>' +
       (c.notes ? '<p class="notes">' + esc(c.notes) + '</p>' : ''));
     html += card('Installation', '<div class="infos">' + info('Énergie', c.heating_type) + info('Chaudière / PAC', c.boiler_brand) + info('Émetteurs', c.emitter_type) +
-      info('Radiateurs', c.radiators_count) + info('Dernier passage', c.last_service_date ? fmtDate(c.last_service_date) : 'Jamais') +
+      info('Radiateurs', c.radiators_count) + info('Boucles plancher', c.loops_count) + info('Dernier passage', c.last_service_date ? fmtDate(c.last_service_date) : 'Jamais') +
       (ns ? '<div class="info"><span>Prochain entretien</span><b class="' + (ns < new Date() ? 'warn' : '') + '">' + fmtDate(ymd(ns)) + (ns < new Date() ? ' (en retard)' : '') + '</b></div>' : '') + '</div>');
 
     html += card('Rendez-vous', appts.length ? '<div class="list">' + appts.map((a) => apptRow(a, { showDate: true })).join('') + '</div>' : empty('Aucun rendez-vous.'),
@@ -2261,7 +2283,7 @@
     html += '<div class="grid-2">';
     html += card('Client', '<a class="client-link" href="#/clients/' + c.id + '"><b>' + esc(c.name) + '</b><span>' + esc(fullAddress(c)) + '</span><span>' + esc(c.phone || '') + '</span></a>' + contactButtons(c, { appt: a }));
     html += card('Infos installation', '<div class="infos">' +
-      [['Énergie', c.heating_type], ['Chaudière / PAC', c.boiler_brand], ['Émetteurs', c.emitter_type], ['Radiateurs', c.radiators_count], ['Dernier passage', c.last_service_date ? fmtDate(c.last_service_date) : '']]
+      [['Énergie', c.heating_type], ['Chaudière / PAC', c.boiler_brand], ['Émetteurs', c.emitter_type], ['Radiateurs', c.radiators_count], ['Boucles plancher chauffant', c.loops_count], ['Dernier passage', c.last_service_date ? fmtDate(c.last_service_date) : '']]
         .filter((x) => x[1] || x[1] === 0).map((x) => '<div class="info"><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('') + '</div>' +
       (a.notes ? '<p class="notes"><b>Consignes :</b> ' + esc(a.notes) + '</p>' : ''));
     const pays = S.data.payments.filter((p) => p.appointment_id === a.id).sort((x, y) => y.created_at.localeCompare(x.created_at));
@@ -2736,7 +2758,7 @@
       });
     },
     'export-csv': () => {
-      const cols = ['name', 'type', 'company', 'phone', 'email', 'address', 'postal_code', 'city', 'country', 'source', 'status', 'heating_type', 'boiler_brand', 'emitter_type', 'radiators_count', 'last_service_date', 'notes', 'created_at'];
+      const cols = ['name', 'type', 'company', 'phone', 'email', 'address', 'postal_code', 'city', 'country', 'source', 'status', 'heating_type', 'boiler_brand', 'emitter_type', 'radiators_count', 'loops_count', 'last_service_date', 'notes', 'created_at'];
       const cell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
       const csv = String.fromCharCode(0xFEFF) + cols.join(';') + '\n' + S.data.clients.map((c) => cols.map((k) => cell(k === 'status' ? STATUS[c.status].label : c[k])).join(';')).join('\n');
       const a = document.createElement('a');
@@ -2888,12 +2910,12 @@
     'q-kind': (el) => {
       editor.kind = el.dataset.kind;
       editor.q.title = QUOTE_KINDS[editor.kind].title;
-      editor.q.lines = linesFor(editor.kind, editor.count);
+      editor.q.lines = linesFor(editor.kind, editor.rad, editor.loops);
       render();
     },
     'q-generate': () => {
       if (!editor.kind) editor.kind = 'radiateurs';
-      editor.q.lines = linesFor(editor.kind, editor.count);
+      editor.q.lines = linesFor(editor.kind, editor.rad, editor.loops);
       editor.q.title = editor.q.title || QUOTE_KINDS[editor.kind].title;
       render(); toast('Lignes remplies');
     },

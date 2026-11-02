@@ -458,7 +458,7 @@
     const A = 'u-admin', T = 'u-tech';
     const c = (id, o) => Object.assign({
       id, created_at: day(-30), created_by: A, type: 'particulier', company: '', email: '', country: 'FR',
-      heating_type: 'Gaz', boiler_brand: '', emitter_type: 'Radiateurs', radiators_count: null,
+      heating_type: 'Gaz', boiler_brand: '', emitter_type: 'Radiateurs', radiators_count: null, loops_count: null,
       last_service_date: null, service_interval_months: 36, notes: '', assigned_to: null
     }, o);
 
