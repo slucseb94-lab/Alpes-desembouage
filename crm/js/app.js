@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '24 — e-mail facture';
+  const APP_VERSION = '25 — demande de coordonnées';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -401,6 +401,15 @@
     return text;
   }
 
+  // E-mail type pour un prospect arrivé sans téléphone valable ou sans adresse : il répond directement à l'e-mail
+  function contactRequestText() {
+    return 'Bonjour,\n\nMerci pour votre demande de devis pour le désembouage de votre circuit de chauffage.\n\n' +
+      'Afin de vous établir un devis précis et en bonne et due forme, pourriez-vous me communiquer les informations suivantes, en répondant simplement à cet e-mail :\n\n' +
+      '- Nom et prénom :\n- Adresse postale complète (lieu de l\'intervention) :\n- Numéro de téléphone :\n- Nombre de radiateurs :\n- Et/ou nombre de boucles de plancher chauffant (visible sur le collecteur) :\n\n' +
+      'Dès réception, je vous envoie votre devis dans les plus brefs délais.\n\n' +
+      'Je vous remercie par avance et reste à votre disposition pour toute question.\n\nBien cordialement,\n\nSébastien Tilliet\n' + company().name;
+  }
+
   function quoteEmailTemplates(q, c) {
     const t = quoteEmailTexts(), rdv = nextRdvText(c);
     return [
@@ -417,14 +426,14 @@
     if (!emailReady()) {
       openSheet('E-mail à ' + c.name,
         '<p class="muted">L\'envoi direct depuis le CRM n\'est pas encore réglé' + (S.isAdmin() ? ' (Réglages → Envoi des e-mails)' : '') + '. En attendant, l\'e-mail s\'ouvre dans votre messagerie.</p>' +
-        '<div class="pay-actions"><a class="btn btn-primary" href="mailto:' + esc(c.email) + '?subject=' + encodeURIComponent(opts.subject || '') + '&body=' + encodeURIComponent(text0) + '" data-m="open">' + icon('mail') + 'Ouvrir ma messagerie</a></div>',
+        '<div class="pay-actions"><a class="btn btn-primary" href="mailto:' + esc(c.email) + '?subject=' + encodeURIComponent((chosen && chosen.subject) || opts.subject || '') + '&body=' + encodeURIComponent(text0) + '" data-m="open">' + icon('mail') + 'Ouvrir ma messagerie</a></div>',
         (root) => $('[data-m=open]', root).addEventListener('click', () => logActivity(c.id, 'email', opts.logText || ('E-mail : ' + (opts.subject || ''))).catch(() => {})));
       return;
     }
     openSheet('E-mail à ' + c.name,
       '<div class="form-grid">' +
       '<label class="field"><span>À</span><input value="' + esc(c.email) + '" disabled></label>' +
-      '<label class="field"><span>Objet</span><input id="mail-subject" value="' + esc(opts.subject || '') + '"></label>' +
+      '<label class="field"><span>Objet</span><input id="mail-subject" value="' + esc((chosen && chosen.subject) || opts.subject || '') + '"></label>' +
       (tpls.length > 1 ? '<div class="field"><span>Modèle de message</span><div class="seg-btns">' +
         tpls.map((t, i) => '<button type="button" class="chip' + (t === chosen ? ' on' : '') + '" data-tpl="' + i + '">' + esc(t.label) + '</button>').join('') + '</div></div>' : '') +
       '<label class="field"><span>Message</span><textarea id="mail-text" rows="12">' + esc(text0) + '</textarea></label>' +
@@ -436,7 +445,9 @@
       '</div><div class="pay-actions"><button class="btn btn-primary btn-lg" data-m="send">' + icon('mail') + 'Envoyer</button></div>',
       (root) => {
         root.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => {
-          $('#mail-text', root).value = tpls[Number(b.dataset.tpl)].text;
+          const t = tpls[Number(b.dataset.tpl)];
+          $('#mail-text', root).value = t.text;
+          if (t.subject) $('#mail-subject', root).value = t.subject;
           root.querySelectorAll('[data-tpl]').forEach((x) => x.classList.toggle('on', x === b));
         }));
         const btn = $('[data-m=send]', root);
@@ -3018,7 +3029,15 @@
       toast(todo.length + ' rendez-vous envoyé(s) vers le calendrier iPhone'); render();
     },
     'sms-relance': (el) => smsSheet(client(el.dataset.client), {}, 'relance_prospect'),
-    'email': (el) => emailSheet(client(el.dataset.client), { subject: company().name }),
+    'email': (el) => {
+      const c = client(el.dataset.client);
+      // Téléphone absent / incomplet ou adresse manquante : on propose d'office la demande de coordonnées
+      const missing = String(c.phone || '').replace(/\D/g, '').length < 10 || !c.address;
+      emailSheet(c, { subject: company().name, templates: [
+        { label: 'Message libre', subject: company().name, text: 'Bonjour ' + c.name + ',' + emailSignature() },
+        { label: 'Demande de coordonnées', subject: 'Votre demande de devis — ' + company().name, text: contactRequestText(), preferred: missing }
+      ] });
+    },
     'reminder': (el) => askReminder(client(el.dataset.client)),
     'reminder-done': async (el) => {
       const c = client(el.dataset.client);
