@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '26 — boucles plancher';
+  const APP_VERSION = '27 — texte des forfaits';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -79,15 +79,15 @@
   };
 
   // Catalogue des prestations (prix TTC), modifiable dans Réglages → Catalogue.
-  const DESC_RAD = 'Désembouage complet des réseaux de chauffage par radiateurs. Nettoyage mécanique par mélange d’eau et d’air sous pression à l’aide de la centrale de désembouage Virafal. Nettoyage du circuit complet ainsi que de chaque radiateur. Injection de l\'inhibiteur Sentinel X100 protection contre les boues.';
-  const DESC_SOL = 'Désembouage complet des réseaux de chauffage au sol. Nettoyage mécanique par mélange d’eau et d’air sous pression à l’aide de la centrale de désembouage Virafal. Nettoyage du circuit complet ainsi que de chaque boucle du plancher chauffant. Injection de l\'inhibiteur Sentinel X100 protection contre les boues.';
-  const DESC_MIX = 'Désembouage complet des réseaux de chauffage par radiateurs/boucles. Nettoyage mécanique par mélange d’eau et d’air sous pression à l’aide de la centrale de désembouage Virafal. Nettoyage du circuit complet ainsi que de chaque radiateur/boucle. Injection de l\'inhibiteur Sentinel X100 protection contre les boues.';
+  // Texte imposé sous les 3 forfaits de base : toujours le même, quels que soient le devis et le catalogue enregistré
+  const FORFAIT_DESC = 'Désembouage complet du circuit de chauffage. Nettoyage mécanique par mélange d\'eau et d\'air sous pression, à l\'aide de la centrale de désembouage Virafal : nettoyage de l\'ensemble du circuit ainsi que de chaque radiateur et/ou boucle de plancher chauffant. Injection de l\'inhibiteur Sentinel X100 pour protéger l\'installation contre la corrosion, le tartre et la formation de boues. Remise en eau, purge et remise en fonction du réseau.';
+  const isForfait = (id) => /^(rad|sol|mix)$/.test(id);
   const DEFAULT_CATALOG = [
-    { id: 'rad', label: 'Forfait désembouage circuit chauffage inclus 5 radiateurs', description: DESC_RAD, unit: 'forfait', price_ttc: 590 },
+    { id: 'rad', label: 'Forfait désembouage circuit chauffage inclus 5 radiateurs', description: FORFAIT_DESC, unit: 'forfait', price_ttc: 590 },
     { id: 'rad-sup', label: 'Radiateurs supplémentaires', description: '', unit: 'u', price_ttc: 50 },
-    { id: 'sol', label: 'Forfait désembouage du circuit de chauffage au sol inclus 5 boucles', description: DESC_SOL, unit: 'forfait', price_ttc: 590 },
+    { id: 'sol', label: 'Forfait désembouage du circuit de chauffage au sol inclus 5 boucles', description: FORFAIT_DESC, unit: 'forfait', price_ttc: 590 },
     { id: 'sol-sup', label: 'Boucles supplémentaires', description: '', unit: 'u', price_ttc: 50 },
-    { id: 'mix', label: 'Forfait désembouage circuit chauffage inclus 5 radiateurs/boucles de plancher chauffant', description: DESC_MIX, unit: 'forfait', price_ttc: 590 },
+    { id: 'mix', label: 'Forfait désembouage circuit chauffage inclus 5 radiateurs/boucles de plancher chauffant', description: FORFAIT_DESC, unit: 'forfait', price_ttc: 590 },
     { id: 'mix-sup', label: 'Radiateurs et boucles supplémentaires', description: '', unit: 'u', price_ttc: 50 }
   ];
   // Les 3 types de devis : forfait (5 inclus) + éléments supplémentaires
@@ -999,7 +999,8 @@
   }
 
   // ================================================================ création des devis
-  const catalog = () => (Array.isArray(S.data.settings.catalog) && S.data.settings.catalog.length ? S.data.settings.catalog : DEFAULT_CATALOG);
+  const catalog = () => (Array.isArray(S.data.settings.catalog) && S.data.settings.catalog.length ? S.data.settings.catalog : DEFAULT_CATALOG)
+    .map((it) => (isForfait(it.id) ? Object.assign({}, it, { description: FORFAIT_DESC }) : it));
   const catalogItem = (id) => catalog().find((x) => x.id === id);
   const lineFrom = (item, qty) => ({ label: item.label, description: item.description || '', unit: item.unit || 'u', qty, price_ttc: Number(item.price_ttc) || 0 });
   const kindFromClient = (c) => (c.emitter_type === 'Plancher chauffant' ? 'plancher' : c.emitter_type === 'Mixte' ? 'mixte'
@@ -1034,7 +1035,7 @@
       title: item ? 'Modifier la prestation' : 'Nouvelle prestation',
       fields: [
         { name: 'label', label: 'Désignation', required: true },
-        { name: 'description', label: 'Description (imprimée sous la désignation)', type: 'textarea', rows: 4 },
+        { name: 'description', label: 'Description (imprimée sous la désignation)', type: 'textarea', rows: 4, hint: item && isForfait(item.id) ? 'Texte fixe pour les forfaits de base : toute modification ici sera ignorée.' : '' },
         { name: 'unit', label: 'Unité', half: true, placeholder: 'u, forfait, m², h…' },
         { name: 'price_ttc', label: 'Prix TTC (€)', type: 'number', step: '0.01', required: true, half: true, inputmode: 'decimal' }
       ],
