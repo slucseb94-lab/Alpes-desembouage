@@ -451,3 +451,15 @@ table.ads td:first-child { font-weight: 600; }
   .job-steps { grid-template-columns: repeat(2, 1fr); }
   .job-end { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
 }
+
+/* Synthèse mensuelle */
+table.syn tr.syn-row { cursor: pointer; }
+table.syn tr.syn-row:hover td, table.syn tr.syn-row.on td { background: var(--blue-50); }
+table.syn tr.now td:first-child { color: var(--blue-700); }
+table.syn tr.syn-total td { border-top: 2px solid var(--line); font-weight: 600; background: var(--bg); }
+.syn-bar-cell { width: 140px; min-width: 120px; }
+.syn-bar { display: flex; height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.syn-bar i { display: block; height: 100%; background: var(--blue-500); }
+.syn-bar i.todo { background: var(--orange-500); }
+.syn-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--blue-500); vertical-align: middle; }
+.syn-key.todo { background: var(--orange-500); }
