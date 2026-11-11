@@ -1,18 +1,22 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '27 — texte des forfaits';
+  const APP_VERSION = '28 — statuts clients';
 
   // ================================================================ référentiels
   const STATUS = {
     nouveau: { label: 'Nouveau prospect', color: '#1c74c4' },
     contacte: { label: 'Contacté', color: '#7c5cc4' },
     devis: { label: 'Devis envoyé', color: '#e0691f' },
-    rdv: { label: 'RDV confirmé', color: '#0e8a8a' },
-    client: { label: 'Client', color: '#1f9d55' },
+    rdv: { label: 'RDV fixé · devis à signer', color: '#0e8a8a' },
+    client: { label: 'Client en cours', color: '#1f9d55' },
+    termine: { label: 'Client terminé', color: '#0b6b3a' },
     perdu: { label: 'Perdu', color: '#8a94a3' },
     indesirable: { label: 'Arnaque / robot', color: '#b3261e' }
   };
+  // Client en cours (devis signé, intervention pas encore payée) ou client terminé (facture payée)
+  const isClient = (c) => !!c && (c.status === 'client' || c.status === 'termine');
+  const isDone = (c) => !!c && c.status === 'termine';
   const CLIENT_TYPES = { particulier: 'Particulier', professionnel: 'Professionnel', syndic: 'Syndic / copropriété' };
   const APPT_TYPES = { visite: 'Visite technique', desembouage: 'Désembouage', entretien: 'Entretien', sav: 'SAV / dépannage', autre: 'Autre' };
   const APPT_STATUS = {
@@ -202,7 +206,7 @@
     const from = STATUS[c.status].label;
     const patch = { status };
     if (status === 'perdu') patch.lost_reason = reason ? reason.charAt(0).toUpperCase() + reason.slice(1) : '';
-    if (['perdu', 'indesirable', 'client'].includes(status)) patch.next_action_at = null;
+    if (['perdu', 'indesirable', 'client', 'termine'].includes(status)) patch.next_action_at = null;
     await S.update('clients', c.id, patch);
     await logActivity(c.id, 'statut', 'Statut : ' + from + ' → ' + STATUS[status].label + (reason ? ' (' + reason + ')' : ''));
     return true;
@@ -735,7 +739,7 @@
         if (c) {
           const old = c.status;
           if (v.status === 'perdu' && old !== 'perdu') askLost = true;
-          if (['indesirable', 'client'].includes(v.status)) v.next_action_at = null;
+          if (['indesirable', 'client', 'termine'].includes(v.status)) v.next_action_at = null;
           await S.update('clients', c.id, v);
           if (old !== v.status && !askLost) await logActivity(c.id, 'statut', 'Statut : ' + STATUS[old].label + ' → ' + STATUS[v.status].label);
           toast('Fiche mise à jour');
@@ -1316,6 +1320,12 @@
   }
 
   // Émission : numéro définitif, PDF figé et archivé (factures/…)
+  // Facture payée : le client passe en « Client terminé »
+  async function markClientDone(clientId) {
+    const c = client(clientId);
+    if (c && c.status !== 'indesirable') await setClientStatus(c, 'termine', 'facture payée');
+  }
+
   async function issueInvoice() {
     const draft = await saveInvoiceDraft();
     const inv = await S.issueInvoice(draft.id);
@@ -1324,6 +1334,7 @@
     await S.putFile(path, bytes);
     const row = await S.update('invoices', inv.id, { pdf_path: path });
     await logActivity(inv.client_id, 'note', invTitle(row) + ' émis' + (row.kind === 'avoir' ? '' : 'e') + ' (' + fmtMoney2(row.total_ttc) + ' TTC)');
+    if (row.status === 'payee') await markClientDone(row.client_id);
     // Copie d'archive dans le Google Drive (dossier « CRM Alpes Désembouage / Factures / AAAA »), sans bloquer
     if (emailReady()) {
       bytesToBase64(bytes).then((b64) => callMailScript({ action: 'drive_save', folder: 'Factures/' + String(row.issue_date || '').slice(0, 4), name: invoiceFileName(row), type: 'application/pdf', base64: b64 }))
@@ -1401,6 +1412,7 @@
         values: { payment_method: 'Virement', paid_at: ymd(new Date()) },
         onSubmit: async (v) => {
           await S.update('invoices', inv.id, { status: 'payee', paid_at: v.paid_at, payment_method: v.payment_method });
+          await markClientDone(inv.client_id);
           if (inv.client_id) await logActivity(inv.client_id, 'note', 'Facture ' + inv.number + ' payée (' + v.payment_method.toLowerCase() + ', ' + fmtMoney2(inv.total_ttc) + ')');
           toast('Facture marquée comme payée');
         }
@@ -1450,7 +1462,7 @@
   function revenueFor(clientIds) {
     const set = new Set(clientIds);
     const billed = S.data.invoices.filter((i) => set.has(i.client_id) && i.status !== 'brouillon').reduce((s, i) => s + Number(i.total_ttc || 0), 0);
-    const won = S.data.clients.filter((c) => set.has(c.id) && (c.status === 'client' || S.data.quotes.some((q) => q.client_id === c.id && q.status === 'accepte'))).length;
+    const won = S.data.clients.filter((c) => set.has(c.id) && (isClient(c) || S.data.quotes.some((q) => q.client_id === c.id && q.status === 'accepte'))).length;
     return { billed, won };
   }
 
@@ -1612,7 +1624,7 @@
     if (c) {
       await logActivity(c.id, 'visite', APPT_TYPES[a.type] + ' terminé(e)');
       if (SERVICE_TYPES.includes(a.type)) await S.update('clients', c.id, { last_service_date: ymd(new Date(a.start_at)) });
-      if (SERVICE_TYPES.includes(a.type) || a.type === 'sav') await setClientStatus(client(c.id), 'client', 'intervention réalisée');
+      if ((SERVICE_TYPES.includes(a.type) || a.type === 'sav') && !isDone(client(c.id))) await setClientStatus(client(c.id), 'client', 'intervention réalisée');
     }
     calPush(S.data.appointments.find((x) => x.id === a.id));
   }
@@ -1942,7 +1954,7 @@
       }).join('') + '</div>' : empty('Aucun devis en attente depuis plus de 7 jours.'));
 
       const soon = addDays(now, 45);
-      const services = S.data.clients.map((c) => ({ c, d: nextService(c) })).filter((x) => x.d && x.d <= soon && x.c.status === 'client')
+      const services = S.data.clients.map((c) => ({ c, d: nextService(c) })).filter((x) => x.d && x.d <= soon && isClient(x.c))
         .filter((x) => !S.data.appointments.some((a) => a.client_id === x.c.id && new Date(a.start_at) > now && a.status !== 'annule'))
         .sort((a, b) => a.d - b.d);
       html += card('Entretiens à prévoir', services.length ? '<div class="list">' + services.map((x) =>
@@ -2176,7 +2188,7 @@
       Object.entries(STATUS).map(([k, v]) => '<option value="' + k + '"' + (c.status === k ? ' selected' : '') + '>' + esc(v.label) + '</option>').join('') + '</select>' +
       '<span class="muted small">Fiche créée ' + relTime(c.created_at) + (c.source ? ' · ' + esc(c.source) : '') + '</span></div>';
     html += contactButtons(c);
-    if (c.status !== 'client') {
+    if (!isClient(c)) {
       html += '<div class="follow"><span class="follow-label">Suivi du contact :</span>' +
         FOLLOW_UPS.map(([k, label]) => '<button class="chip follow-chip" style="--c:' + ACT_TYPES[k].color + '" data-action="follow-up" data-client="' + c.id + '" data-type="' + k + '">' + esc(label) + '</button>').join('') +
         (c.status !== 'indesirable' ? '<button class="chip follow-chip spam" data-action="mark-spam" data-client="' + c.id + '">Arnaque / robot</button>' : '') + '</div>';
@@ -2186,7 +2198,7 @@
       html += '<div class="reminder' + (r.late ? ' late' : '') + '">' + icon('clock') + '<div><b>À rappeler ' + esc(r.text) + '</b>' + (c.next_action_note ? '<span>' + esc(c.next_action_note) + '</span>' : '') + '</div>' +
         '<button class="btn btn-ghost btn-sm" data-action="reminder" data-client="' + c.id + '">Changer</button>' +
         '<button class="btn btn-primary btn-sm" data-action="reminder-done" data-client="' + c.id + '">Fait</button></div>';
-    } else if (!['client', 'perdu', 'indesirable'].includes(c.status)) {
+    } else if (!['client', 'termine', 'perdu', 'indesirable'].includes(c.status)) {
       html += '<div class="reminder-add"><button class="link" data-action="reminder" data-client="' + c.id + '">' + icon('clock') + ' Programmer un rappel</button></div>';
     }
     if (c.status === 'perdu' && c.lost_reason) html += '<div class="lost">Motif de perte : <b>' + esc(c.lost_reason) + '</b></div>';
@@ -2240,9 +2252,9 @@
     html += '<div class="board">';
     Object.entries(STATUS).filter(([k]) => k !== 'indesirable').forEach(([k, v]) => {
       const items = S.data.clients.filter((c) => c.status === k).sort((a, b) => b.created_at.localeCompare(a.created_at));
-      const amount = items.reduce((s, c) => s + S.data.quotes.filter((q) => q.client_id === c.id && (k === 'client' ? q.status === 'accepte' : q.status === 'envoye')).reduce((x, q) => x + Number(q.amount || 0), 0), 0);
+      const amount = items.reduce((s, c) => s + S.data.quotes.filter((q) => q.client_id === c.id && (k === 'client' || k === 'termine' ? q.status === 'accepte' : q.status === 'envoye')).reduce((x, q) => x + Number(q.amount || 0), 0), 0);
       html += '<div class="col" data-status="' + k + '" style="--c:' + v.color + '"><div class="col-head"><span>' + esc(v.label) + '</span><b>' + items.length + '</b></div>' +
-        (amount && (k === 'devis' || k === 'client') ? '<div class="col-sum">' + fmtMoney(amount) + '</div>' : '') +
+        (amount && (k === 'devis' || k === 'client' || k === 'termine') ? '<div class="col-sum">' + fmtMoney(amount) + '</div>' : '') +
         '<div class="col-body">' + items.map((c) => {
           const last = S.data.activities.filter((a) => a.client_id === c.id).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
           return '<a class="pcard" draggable="true" data-id="' + c.id + '" href="#/clients/' + c.id + '"><b>' + esc(c.name) + '</b><span>' + esc(c.city || '') + '</span>' +
@@ -2722,7 +2734,7 @@
         if (to === 'termine' && c) {
           await logActivity(c.id, 'visite', APPT_TYPES[a.type] + ' terminé(e)' + (a.report ? ' — ' + a.report : ''));
           if (SERVICE_TYPES.includes(a.type)) await S.update('clients', c.id, { last_service_date: ymd(new Date(a.start_at)) });
-          if (SERVICE_TYPES.includes(a.type) || a.type === 'sav') await setClientStatus(client(c.id), 'client', 'intervention réalisée');
+          if ((SERVICE_TYPES.includes(a.type) || a.type === 'sav') && !isDone(client(c.id))) await setClientStatus(client(c.id), 'client', 'intervention réalisée');
         } else if (to === 'annule' && c) {
           await logActivity(c.id, 'note', 'RDV du ' + fmtDate(a.start_at) + ' annulé');
           await revertRdvStatus(c.id);
@@ -2803,6 +2815,7 @@
         values: { payment_method: 'Virement', paid_at: ymd(new Date()) },
         onSubmit: async (v) => {
           await S.update('invoices', inv.id, { status: 'payee', paid_at: v.paid_at, payment_method: v.payment_method });
+          await markClientDone(inv.client_id);
           if (inv.client_id) await logActivity(inv.client_id, 'note', 'Facture ' + inv.number + ' payée (' + v.payment_method.toLowerCase() + ', ' + fmtMoney2(inv.total_ttc) + ')');
           toast('Marqué comme payé');
         }
@@ -3067,7 +3080,7 @@
       await guard(() => S.update('clients', c.id, { next_action_at: null, next_action_note: '' }));
       toast('Rappel terminé');
       render();
-      if (!['client', 'perdu', 'indesirable'].includes(c.status)) askReminder(client(c.id), 'Prévoir un prochain rappel ?');
+      if (!['client', 'termine', 'perdu', 'indesirable'].includes(c.status)) askReminder(client(c.id), 'Prévoir un prochain rappel ?');
     },
     'mark-spam': async (el) => {
       if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Confirmer : arnaque / robot ?'; return; }
