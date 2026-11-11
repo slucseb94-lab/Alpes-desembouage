@@ -1,7 +1,7 @@
 // CRM Alpes Désembouage — interface (routeur, vues, formulaires).
 (function () {
   const S = window.Store;
-  const APP_VERSION = '29 — synthèse mensuelle';
+  const APP_VERSION = '30 — synthèse : RDV pris + export';
 
   // ================================================================ référentiels
   const STATUS = {
@@ -1450,21 +1450,27 @@
     return html;
   }
 
-
-  // ================================================================ synthèse mensuelle : facturé, encaissé, à facturer
-  function viewSynthese(params) {
-    if (!S.isAdmin()) return pageHead('Synthèse') + empty('Réservé au gérant.');
-    const nowKey = ymd(new Date()).slice(0, 7), thisYear = nowKey.slice(0, 4);
+  // ================================================================ synthèse mensuelle : facturé, encaissé, à facturer, RDV pris
+  // Données par mois. « rdv » : rendez-vous pris (non annulé, non terminé) chez un client dont le devis n'est pas encore signé.
+  function synthData() {
+    const nowKey = ymd(new Date()).slice(0, 7);
     const invs = S.data.invoices.filter((i) => i.status !== 'brouillon' && i.status !== 'annulee');
     const todo = jobsList().filter((j) => ['a_planifier', 'planifie', 'a_facturer'].includes(j.stage));
     const jobMonth = (j) => (j.appt ? monthKey(j.appt.start_at) : '');
-    const pending = S.data.quotes.filter((q) => q.status === 'envoye');
-    const years = [...new Set([thisYear].concat(invs.map((i) => String(i.issue_date || '').slice(0, 4)), todo.map((j) => jobMonth(j).slice(0, 4))).filter((y) => /^\d{4}$/.test(y)))].sort();
-    const year = years.includes(params.get('y')) ? params.get('y') : thisYear;
-    const sel = params.get('m') || '';
-
+    const signed = new Set(todo.map((j) => j.c.id));
+    const rdvs = [];
+    const seen = new Set();
+    S.data.appointments.filter((a) => a.status !== 'annule' && a.status !== 'termine' && a.client_id).sort((a, b) => a.start_at.localeCompare(b.start_at)).forEach((a) => {
+      const c = client(a.client_id);
+      if (!c || seen.has(c.id) || signed.has(c.id) || isDone(c) || c.status === 'indesirable' || c.status === 'perdu') return;
+      const q = S.data.quotes.filter((x) => x.client_id === c.id && x.status === 'envoye').sort((x, y) => String(y.created_at).localeCompare(String(x.created_at)))[0];
+      if (!q && c.status !== 'rdv' && c.status !== 'devis') return;
+      seen.add(c.id);
+      rdvs.push({ c, appt: a, q: q || null, amount: q ? Number(q.amount || 0) : 0 });
+    });
+    const pending = S.data.quotes.filter((q) => q.status === 'envoye' && !seen.has(q.client_id));
     const m = {};
-    const row = (k) => (m[k] = m[k] || { ht: 0, ttc: 0, nb: 0, paid: 0, due: 0, todo: 0, nbTodo: 0 });
+    const row = (k) => (m[k] = m[k] || { ht: 0, ttc: 0, nb: 0, paid: 0, due: 0, todo: 0, nbTodo: 0, rdv: 0, nbRdv: 0 });
     invs.forEach((i) => {
       const r = row(monthKey(i.issue_date || i.created_at));
       r.ttc += Number(i.total_ttc || 0);
@@ -1474,51 +1480,108 @@
       if (i.status === 'payee') row(monthKey(i.paid_at || i.issue_date)).paid += Number(i.total_ttc || 0);
     });
     todo.forEach((j) => { const r = row(jobMonth(j) || 'np'); r.todo += j.amount; r.nbTodo++; });
+    rdvs.forEach((x) => { const r = row(monthKey(x.appt.start_at)); r.rdv += x.amount; r.nbRdv++; });
+    return { nowKey, invs, todo, jobMonth, rdvs, pending, m, row };
+  }
 
-    const showNp = !!m.np && year === thisYear;
-    const list = [...new Set(Object.keys(m).filter((k) => k.startsWith(year)).concat(year === thisYear ? [nowKey] : []))].sort();
-    const keys = list.concat(showNp ? ['np'] : []);
+  function synthMonths(d, year) {
+    const thisYear = d.nowKey.slice(0, 4);
+    const list = [...new Set(Object.keys(d.m).filter((k) => k.startsWith(year)).concat(year === thisYear ? [d.nowKey] : []))].sort();
+    return list.concat(d.m.np && year === thisYear ? ['np'] : []);
+  }
+
+  function downloadCsv(name, header, rows) {
+    const cell = (v) => (typeof v === 'number' ? v.toFixed(2).replace('.', ',') : '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"');
+    const csv = String.fromCharCode(0xFEFF) + header.map(cell).join(';') + '\n' + rows.map((r) => r.map(cell).join(';')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = name;
+    a.click();
+  }
+
+  function exportSynthese(year, detail) {
+    const d = synthData();
+    if (!detail) {
+      const keys = synthMonths(d, year);
+      const rows = keys.map((k) => { const r = d.m[k] || d.row(k); return [k === 'np' ? 'Pas encore planifié' : monthLabel(k), r.ht, r.ttc, r.nb, r.paid, r.due, r.todo, r.nbTodo, r.rdv, r.nbRdv]; });
+      const tot = (i) => rows.reduce((s, r) => s + r[i], 0);
+      rows.push(['Total ' + year].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(tot)));
+      downloadCsv('synthese-' + year + '.csv', ['Mois', 'Facturé HT', 'Facturé TTC', 'Nb factures', 'Encaissé TTC', 'Reste à encaisser TTC', 'À facturer TTC (devis signés)', 'Nb devis signés', 'RDV pris · devis à signer TTC', 'Nb RDV pris'], rows);
+      return;
+    }
+    const lines = [];
+    d.invs.filter((i) => String(i.issue_date || i.created_at).startsWith(year)).sort((a, b) => String(a.issue_date).localeCompare(String(b.issue_date)) || String(a.number).localeCompare(String(b.number))).forEach((i) => {
+      const c = client(i.client_id) || i.client_snapshot || {};
+      lines.push([i.kind === 'avoir' ? 'Avoir' : 'Facture', i.number || '', i.issue_date || '', c.name || '', c.city || '', i.title || '',
+        Number(i.total_ht != null ? i.total_ht : i.total_ttc || 0), Number(i.total_tva || 0), Number(i.total_ttc || 0),
+        i.status === 'payee' ? 'Payée' : 'À payer', i.paid_at || '', PAY_METHODS[i.payment_method] || i.payment_method || '']);
+    });
+    d.todo.forEach((j) => lines.push(['À facturer (devis signé)', (j.q && j.q.reference) || '', j.appt ? j.appt.start_at.slice(0, 10) : '', j.c.name || '', j.c.city || '', (j.q && j.q.title) || '',
+      j.q && j.q.total_ht != null ? Number(j.q.total_ht) : '', j.q && j.q.total_tva != null ? Number(j.q.total_tva) : '', j.amount, j.appt ? 'RDV prévu' : 'À planifier', '', '']));
+    d.rdvs.forEach((x) => lines.push(['RDV pris · devis à signer', (x.q && x.q.reference) || '', x.appt.start_at.slice(0, 10), x.c.name || '', x.c.city || '', (x.q && x.q.title) || '',
+      x.q && x.q.total_ht != null ? Number(x.q.total_ht) : '', x.q && x.q.total_tva != null ? Number(x.q.total_tva) : '', x.amount, x.q ? 'Devis envoyé' : 'Pas de devis', '', '']));
+    downloadCsv('factures-detail-' + year + '.csv', ['Type', 'Numéro', 'Date', 'Client', 'Ville', 'Objet', 'HT', 'TVA', 'TTC', 'État', 'Payée le', 'Mode de paiement'], lines);
+  }
+
+  function viewSynthese(params) {
+    if (!S.isAdmin()) return pageHead('Synthèse') + empty('Réservé au gérant.');
+    const d = synthData(), m = d.m, nowKey = d.nowKey, thisYear = nowKey.slice(0, 4);
+    const years = [...new Set([thisYear].concat(Object.keys(m).map((k) => k.slice(0, 4))).filter((y) => /^\d{4}$/.test(y)))].sort();
+    const year = years.includes(params.get('y')) ? params.get('y') : thisYear;
+    const sel = params.get('m') || '';
+    const keys = synthMonths(d, year);
     const sum = (f) => keys.reduce((s, k) => s + (m[k] ? m[k][f] : 0), 0);
-    const max = Math.max(1, ...keys.map((k) => (m[k] ? Math.max(0, m[k].ttc) + m[k].todo : 0)));
-    const allDue = invs.filter((i) => i.status === 'emise' && i.kind === 'facture').reduce((s, i) => s + Number(i.total_ttc || 0), 0);
-    const allTodo = todo.reduce((s, j) => s + j.amount, 0);
-    const pendingAmt = pending.reduce((s, q) => s + Number(q.amount || 0), 0);
+    const max = Math.max(1, ...keys.map((k) => (m[k] ? Math.max(0, m[k].ttc) + m[k].todo + m[k].rdv : 0)));
+    const allDue = d.invs.filter((i) => i.status === 'emise' && i.kind === 'facture').reduce((s, i) => s + Number(i.total_ttc || 0), 0);
+    const allTodo = d.todo.reduce((s, j) => s + j.amount, 0);
+    const allRdv = d.rdvs.reduce((s, x) => s + x.amount, 0);
+    const pendingAmt = d.pending.reduce((s, q) => s + Number(q.amount || 0), 0);
 
-    let html = pageHead('Synthèse', 'Ce qui a été facturé et ce qui reste à facturer, mois par mois');
+    let html = pageHead('Synthèse', 'Ce qui a été facturé et ce qui reste à facturer, mois par mois',
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="synth-export" data-year="' + year + '">' + icon('doc') + 'Export mensuel</button>' +
+      '<button class="btn btn-ghost btn-sm" data-action="synth-export" data-year="' + year + '" data-detail="1">' + icon('doc') + 'Détail des factures</button></div>');
     html += '<div class="chips" style="margin-bottom:12px">' + years.map((y) => '<a class="chip' + (y === year ? ' on' : '') + '" href="#/synthese?y=' + y + '">' + y + '</a>').join('') + '</div>';
     html += '<div class="kpis">' +
       kpi('Facturé en ' + year, fmtMoney(sum('ttc')), '#/synthese?y=' + year, fmtMoney(sum('ht')) + ' HT · avoirs déduits') +
       kpi('Encaissé en ' + year, fmtMoney(sum('paid')), '#/synthese?y=' + year, 'factures payées') +
       kpi('Reste à encaisser', fmtMoney(allDue), '#/factures?s=impayees', 'factures émises non payées') +
-      kpi('À facturer', fmtMoney(allTodo), '#/chantiers', todo.length + ' devis signé(s) pas encore facturé(s)') + '</div>';
-    if (pending.length) html += '<p class="muted small" style="margin:-6px 0 12px">Devis envoyés en attente de signature : <b>' + pending.length + '</b> pour <b>' + esc(fmtMoney(pendingAmt)) + '</b> (pas comptés dans « À facturer »).</p>';
+      kpi('À facturer', fmtMoney(allTodo), '#/chantiers', d.todo.length + ' devis signé(s) pas encore facturé(s)') +
+      kpi('RDV pris · devis à signer', fmtMoney(allRdv), '#/agenda', d.rdvs.length + ' rendez-vous, devis pas encore signé') + '</div>';
+    if (d.pending.length) html += '<p class="muted small" style="margin:-6px 0 12px">Autres devis envoyés, sans rendez-vous : <b>' + d.pending.length + '</b> pour <b>' + esc(fmtMoney(pendingAmt)) + '</b> (pas comptés dans le tableau).</p>';
 
     const pct = (v) => Math.round(Math.max(0, v) / max * 100);
     const money = (v, strong, cls) => (v ? (strong ? '<b' + (cls ? ' class="' + cls + '"' : '') + '>' : '') + esc(fmtMoney2(v)) + (strong ? '</b>' : '') : '—');
+    const nb = (n) => (n ? ' <span class="muted small">(' + n + ')</span>' : '');
     const tr = (k, label) => {
-      const r = m[k] || row(k);
+      const r = m[k] || d.row(k);
       return '<tr class="syn-row' + (sel === k ? ' on' : '') + (k === nowKey ? ' now' : '') + '" data-href="#/synthese?y=' + year + '&m=' + k + '">' +
         '<td>' + esc(label) + '</td>' +
-        '<td>' + money(r.ttc, true) + (r.nb ? ' <span class="muted small">(' + r.nb + ')</span>' : '') + '</td>' +
+        '<td>' + money(r.ttc, true) + nb(r.nb) + '</td>' +
         '<td>' + money(r.ht) + '</td>' +
         '<td>' + money(r.paid) + '</td>' +
         '<td>' + money(r.due, true, 'warn') + '</td>' +
-        '<td>' + money(r.todo, true) + (r.nbTodo ? ' <span class="muted small">(' + r.nbTodo + ')</span>' : '') + '</td>' +
+        '<td>' + money(r.todo, true) + nb(r.nbTodo) + '</td>' +
+        '<td>' + (r.nbRdv ? (r.rdv ? money(r.rdv, true) : 'montant ?') + nb(r.nbRdv) : '—') + '</td>' +
         '<td>' + money(r.ttc + r.todo) + '</td>' +
-        '<td class="syn-bar-cell"><div class="syn-bar"><i style="width:' + pct(r.ttc) + '%"></i><i class="todo" style="width:' + pct(r.todo) + '%"></i></div></td></tr>';
+        '<td class="syn-bar-cell"><div class="syn-bar"><i style="width:' + pct(r.ttc) + '%"></i><i class="todo" style="width:' + pct(r.todo) + '%"></i><i class="rdv" style="width:' + pct(r.rdv) + '%"></i></div></td></tr>';
     };
-    let rows = list.map((k) => tr(k, monthLabel(k))).join('') + (showNp ? tr('np', 'Pas encore planifié') : '');
+    let rows = keys.map((k) => tr(k, k === 'np' ? 'Pas encore planifié' : monthLabel(k))).join('');
     rows += '<tr class="syn-total"><td>Total ' + year + '</td><td><b>' + esc(fmtMoney2(sum('ttc'))) + '</b></td><td>' + esc(fmtMoney2(sum('ht'))) + '</td><td>' + esc(fmtMoney2(sum('paid'))) + '</td>' +
-      '<td>' + esc(fmtMoney2(sum('due'))) + '</td><td>' + esc(fmtMoney2(sum('todo'))) + '</td><td><b>' + esc(fmtMoney2(sum('ttc') + sum('todo'))) + '</b></td><td></td></tr>';
-    html += '<section class="card flush"><div class="table-wrap"><table class="ads syn"><tr><th>Mois</th><th>Facturé TTC</th><th>dont HT</th><th>Encaissé</th><th>Reste à encaisser</th><th>À facturer</th><th>Total du mois</th><th></th></tr>' + rows + '</table></div>' +
-      '<p class="muted small pad"><span class="syn-key"></span> facturé · <span class="syn-key todo"></span> à facturer. « Facturé » : factures émises dans le mois (avoirs déduits). « Encaissé » : factures payées dans le mois. « Reste à encaisser » : factures du mois pas encore payées. « À facturer » : devis signés pas encore facturés, placés au mois du rendez-vous. Touchez un mois pour voir le détail.</p></section>';
+      '<td>' + esc(fmtMoney2(sum('due'))) + '</td><td>' + esc(fmtMoney2(sum('todo'))) + '</td><td>' + esc(fmtMoney2(sum('rdv'))) + '</td><td><b>' + esc(fmtMoney2(sum('ttc') + sum('todo'))) + '</b></td><td></td></tr>';
+    html += '<section class="card flush"><div class="table-wrap"><table class="ads syn"><tr><th>Mois</th><th>Facturé TTC</th><th>dont HT</th><th>Encaissé</th><th>Reste à encaisser</th><th>À facturer</th><th>RDV pris · devis à signer</th><th>Total du mois</th><th></th></tr>' + rows + '</table></div>' +
+      '<p class="muted small pad"><span class="syn-key"></span> facturé · <span class="syn-key todo"></span> à facturer · <span class="syn-key rdv"></span> RDV pris, devis à signer. « Facturé » : factures émises dans le mois (avoirs déduits). « Encaissé » : factures payées dans le mois. « Reste à encaisser » : factures du mois pas encore payées. « À facturer » : devis signés pas encore facturés, placés au mois du rendez-vous. « RDV pris · devis à signer » : rendez-vous fixé mais devis pas encore signé (montant du devis envoyé) — pas compté dans « Total du mois » tant qu’il n’est pas signé. Touchez un mois pour voir le détail.</p></section>';
 
     if (sel && (m[sel] || sel === nowKey)) {
-      const mi = invs.filter((i) => monthKey(i.issue_date || i.created_at) === sel).sort((a, b) => String(a.number || '').localeCompare(String(b.number || '')));
-      const mt = todo.filter((j) => (jobMonth(j) || 'np') === sel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const mi = d.invs.filter((i) => monthKey(i.issue_date || i.created_at) === sel).sort((a, b) => String(a.number || '').localeCompare(String(b.number || '')));
+      const mt = d.todo.filter((j) => (d.jobMonth(j) || 'np') === sel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const mr = d.rdvs.filter((x) => monthKey(x.appt.start_at) === sel);
       const title = sel === 'np' ? 'Pas encore planifié' : monthLabel(sel);
       html += '<section class="card flush" style="margin-top:16px"><header class="card-head"><h3>' + esc(title) + ' — facturé</h3><a class="link small" href="#/synthese?y=' + year + '">Fermer</a></header>' + (mi.length ? invoiceRows(mi) : empty('Aucune facture sur ce mois.')) + '</section>';
       html += '<section class="card flush" style="margin-top:16px"><header class="card-head"><h3>' + esc(title) + ' — à facturer</h3></header>' + (mt.length ? '<div class="jobs">' + mt.map(jobRow).join('') + '</div>' : empty('Rien à facturer sur ce mois.')) + '</section>';
+      if (sel !== 'np') html += '<section class="card flush" style="margin-top:16px"><header class="card-head"><h3>' + esc(title) + ' — RDV pris, devis à signer</h3></header>' + (mr.length ? '<div class="table-wrap"><table class="ads">' +
+        '<tr><th>Client</th><th>Rendez-vous</th><th>Devis</th><th>Montant</th></tr>' + mr.map((x) => '<tr class="syn-row" data-href="#/clients/' + x.c.id + '"><td>' + esc(x.c.name) + '</td><td>' +
+        esc(fmt(x.appt.start_at, { weekday: 'short', day: 'numeric', month: 'short' }) + ' à ' + fmtTime(x.appt.start_at)) + '</td><td>' + (x.q ? esc(x.q.reference || 'envoyé') : '<span class="warn">pas de devis</span>') + '</td><td>' + money(x.amount, true) + '</td></tr>').join('') +
+        '</table></div>' : empty('Aucun rendez-vous en attente de signature sur ce mois.')) + '</section>';
     }
     return html;
   }
@@ -2846,6 +2909,7 @@
         }
       });
     },
+    'synth-export': (el) => { exportSynthese(el.dataset.year, el.dataset.detail === '1'); toast('Fichier téléchargé'); },
     'export-csv': () => {
       const cols = ['name', 'type', 'company', 'phone', 'email', 'address', 'postal_code', 'city', 'country', 'source', 'status', 'heating_type', 'boiler_brand', 'emitter_type', 'radiators_count', 'loops_count', 'last_service_date', 'notes', 'created_at'];
       const cell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';

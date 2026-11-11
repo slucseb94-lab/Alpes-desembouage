@@ -463,3 +463,5 @@ table.syn tr.syn-total td { border-top: 2px solid var(--line); font-weight: 600;
 .syn-bar i.todo { background: var(--orange-500); }
 .syn-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--blue-500); vertical-align: middle; }
 .syn-key.todo { background: var(--orange-500); }
+.syn-bar i.rdv { background: #0e8a8a; }
+.syn-key.rdv { background: #0e8a8a; }
